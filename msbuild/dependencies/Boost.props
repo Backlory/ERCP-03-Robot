@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ThirdPartyRoot)Boost\include\boost-1_74;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>BOOST_SYSTEM_USE_UTF8;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(ThirdPartyRoot)Boost\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Debug'">
+    <Link>
+      <AdditionalDependencies>libboost_atomic-vc142-mt-gd-x64-1_74.lib;libboost_chrono-vc142-mt-gd-x64-1_74.lib;libboost_date_time-vc142-mt-gd-x64-1_74.lib;libboost_filesystem-vc142-mt-gd-x64-1_74.lib;libboost_system-vc142-mt-gd-x64-1_74.lib;libboost_thread-vc142-mt-gd-x64-1_74.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)' == 'Release'">
+    <Link>
+      <AdditionalDependencies>libboost_atomic-vc142-mt-x64-1_74.lib;libboost_chrono-vc142-mt-x64-1_74.lib;libboost_date_time-vc142-mt-x64-1_74.lib;libboost_filesystem-vc142-mt-x64-1_74.lib;libboost_system-vc142-mt-x64-1_74.lib;libboost_thread-vc142-mt-x64-1_74.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+</Project>

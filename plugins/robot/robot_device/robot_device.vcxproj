@@ -22,7 +22,6 @@
     <ClCompile Include="..\..\lib\drivers\src\serial\serial_bus.cpp" />
     <ClCompile Include="..\..\lib\drivers\src\serial\stepm_driver.cpp" />
     <ClCompile Include="..\..\lib\drivers\src\serial\tension_driver.cpp" />
-    <ClCompile Include="src\AmpPDO.cpp" />
     <ClCompile Include="src\robot_error.cpp" />
     <ClCompile Include="src\robot_settings.cpp" />
     <ClCompile Include="src\robot_device.cpp" />

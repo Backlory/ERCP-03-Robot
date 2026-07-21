@@ -33,7 +33,6 @@
     <ClCompile Include="src\robot_error.cpp">
       <Filter>src</Filter>
     </ClCompile>
-    <ClCompile Include="src\AmpPDO.cpp" />
     <ClCompile Include="..\..\..\plugins\lib\drivers\src\arm_driver\ur\ur_protocol.cpp" />
     <ClCompile Include="..\..\..\plugins\lib\drivers\src\cml_driver.cpp" />
     <ClCompile Include="..\..\..\plugins\lib\drivers\src\gpio_driver.cpp" />
