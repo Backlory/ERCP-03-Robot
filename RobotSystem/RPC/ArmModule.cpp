@@ -4,8 +4,6 @@
 #include "ArmModule.hpp"
 
 namespace ercp {
-
-    extern double GetFeedLength(bool, int encoder[5]);
     extern bool PrepareForFollow();
     extern bool PrepareStopFollow();
 
@@ -23,9 +21,7 @@ namespace ercp {
         bool ArmModule::FollowStopCheck(const ex_trigger &) const
         {
             return PrepareStopFollow();
-            //int encoder[5] = { 0,0,0,0,0 };
-            //return GetFeedLength(false, encoder) <= 0;
-        }
+                    }
 
         bool ArmModule::Initialize() { return this->PostAsyncEvent(ex_signal{ s::s_initialized }); }
 

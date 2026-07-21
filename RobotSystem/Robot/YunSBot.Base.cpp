@@ -390,30 +390,15 @@ namespace ercp {
 
     ///////////////////////////////////////////////////////////////////////////
 
-    //extern task::seque_ptr<> MotorInitor(motor_t mid);
-    //extern task::seque_ptr<> MotorDeInitor(motor_t mid);
-    //extern task::seque_ptr<> GpioInitor(motor_t mid);
-
-    //extern task::seque_ptr<> PusherInitor();
-    //extern task::seque_ptr<> StepInitor();
-
     task::paral_ptr<> BaseInitor()
     {
         auto seq = std::make_shared<ParallelTasks<>>(u8"基座");
-        // delete by cyl 原有电机调用废弃不用
-        //seq->emplace(MotorInitor(motor_t::base_1));
-        //seq->emplace(MotorInitor(motor_t::base_2));
-        //seq->emplace(MotorInitor(motor_t::base_3));
         return seq;
     }
 
     task::paral_ptr<> BaseDeInitor()
     {
         auto seq = std::make_shared<ParallelTasks<>>(u8"基座");
-        // delete by cyl 原有电机调用废弃不用
-        //seq->emplace(MotorDeInitor(motor_t::base_1));
-        //seq->emplace(MotorDeInitor(motor_t::base_2));
-        //seq->emplace(MotorDeInitor(motor_t::base_3));
         return seq;
     }
 
@@ -561,3 +546,4 @@ namespace ercp {
     }
 
 } // namespace ercp
+

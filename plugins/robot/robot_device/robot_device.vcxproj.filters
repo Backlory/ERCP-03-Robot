@@ -34,8 +34,6 @@
       <Filter>src</Filter>
     </ClCompile>
     <ClCompile Include="..\..\..\plugins\lib\drivers\src\arm_driver\ur\ur_protocol.cpp" />
-    <ClCompile Include="..\..\..\plugins\lib\drivers\src\cml_driver.cpp" />
-    <ClCompile Include="..\..\..\plugins\lib\drivers\src\gpio_driver.cpp" />
     <ClCompile Include="..\..\lib\drivers\src\serial\nimotion_driver.cpp">
       <Filter>serial</Filter>
     </ClCompile>

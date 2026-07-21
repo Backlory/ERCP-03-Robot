@@ -4,14 +4,12 @@
 #include "server.interface.h"
 
 #include "robot_devices.h"
+#include "Device.hpp"
 #include "robot_settings.hpp"
 #include "robot_config.h"
 #include "Robot/YunSBot.h"
 
-#include "cml_driver.hpp"
-#include "gpio_driver.hpp"
-#include "arm_driver.hpp"
-
+////////
 #include "RPC/ArmModule.hpp"
 
 using namespace ercp;
@@ -398,3 +396,4 @@ namespace server {
     } // namespace beckhoffator
 
 } // namespace server
+

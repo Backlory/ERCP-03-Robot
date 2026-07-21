@@ -152,10 +152,17 @@
     <ClCompile Include="Robot\YunSBot.Ms.Local.cpp" />
     <ClCompile Include="Robot\YunSBot.Visual.Local.cpp" />
     <ClCompile Include="Robot\YunSBot.SituAware.Local.cpp" />
+    <ClCompile Include="RPC\ArmModule.cpp" />
+    <ClCompile Include="RPC\ArmModule.Actions.cpp" />
+    <ClCompile Include="Robot\Motions\Motions.Cycles.cpp" />
+    <ClCompile Include="Robot\Motions\Motions.MoveArm.cpp" />
+    <ClCompile Include="Robot\Motions\Motions.Config.cpp" />
     <ClInclude Include="Net\server.h" />
     <ClInclude Include="Net\server.handler.h" />
     <ClInclude Include="Net\server.interface.h" />
     <ClInclude Include="Robot\YunSBot.h" />
+    <ClInclude Include="RPC\ArmModule.hpp" />
+    <ClInclude Include="RPC\Module.hpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\plugins\lib\library\library.vcxproj">
@@ -174,3 +181,4 @@
     </VisualStudio>
   </ProjectExtensions>
 </Project>
+

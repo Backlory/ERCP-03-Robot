@@ -1,31 +1,11 @@
-﻿//#include "cml_driver.hpp"
-//#include "beckhoff_driver.hpp"
-#include "serial/stepm_driver.hpp"
-
-#include "robot_config.h"
+﻿#include "robot_config.h"
 #include "robot_devices.h"
 #include "robot_settings.hpp"
 #include "yunsbot_config.h"
 #include "../YunSBot.h"
 #include "RPC/ArmModule.hpp"
-#include "../Kinematics/EndoScopy.h"
-#include "../Kinematics/RobotBase.h"
-#include "../Kinematics/RobotArm_v2.h"
-namespace ercp {
-    extern const double CUTTER_NEGLIM;
-    extern const double CUTTER_POSLIM;
-    extern const double CUTTER_SPEED_RATIO;
-    extern const double STEP_SPEED;
-    extern const double STEP_SPEED_RATIO;
-    extern double GetFeedLength(bool disable_encoder, int encoder[5]);
-    extern double GetFeedTotal();
-    extern const Vector3d Trajectory(const double &length, const Vector3d &stored);
-    extern const cml::JointMotorParam &GetJointConfig(motor_t mid);
-    extern const std::map<motor_t, cml::JointMotorParam> JointConfigs_Auhua;
-    extern const std::map<motor_t, cml::JointMotorParam> JointConfigs_AuhuaDeuodenum;
-    extern task::paral_ptr<> BaseInitor();
-    extern task::paral_ptr<> BaseDeInitor();
 
+namespace ercp {
     robot_status GetRobotStatus()
     {
         auto &robot = GetRobot();
@@ -127,18 +107,15 @@ namespace ercp {
                 //status.vel_bend_lr = current_vel[11];
             //}
             //{
-            //    auto m = robot.GetMotor(motor_t::oper_big);
                 status.pos_bend_ud = -robot.BeckhoffBigWhell();//-asex_Pos[12]; //2-2   // 2-3-1 -robot.BeckhoffBigWhell();//-asex_Pos[12]; 2-2
                 //status.vel_bend_ud = current_vel[12];
             //}
             //{
-            //    auto m = robot.GetMotor(motor_t::oper_rotate);
                 status.pos_rotate = robot.BeckhoffRotateDegree();// asex_Pos[9]; // robot.BeckhoffRotateDegree();   2-3-1
                 //asex_Pos[9];   2-2
                 //status.vel_rotate = current_vel[9];
             //}
             //{
-            //    auto m = robot.GetMotor(motor_t::oper_pincer);
                 status.pos_pincer = robot.BeckhoffLifter(); // asex_Pos[18];
                 //status.vel_pincer = current_vel[10];
             //}
@@ -175,9 +152,6 @@ namespace ercp {
 
         if (GetSettings().Device.Module.Base()) {
 
-            //??????????????????????auto m1 = robot.GetMotor(motor_t::base_1);
-            //auto m2 = robot.GetMotor(motor_t::base_2);
-            //auto m3 = robot.GetMotor(motor_t::base_3);
             //status._reserved[off + (i++)] = m1 ? m1->GetPosition() : 0;
             //status._reserved[off + (i++)] = m2 ? m2->GetPosition() : 0;
             //status._reserved[off + (i++)] = m3 ? m3->GetPosition() : 0;
@@ -188,10 +162,6 @@ namespace ercp {
 
         if (GetSettings().Device.Module.Arm()) {
             // ?????????
-            //auto m1 = robot.GetMotor(motor_t::arm_1);
-            //auto m2 = robot.GetMotor(motor_t::arm_2);
-            //auto m3 = robot.GetMotor(motor_t::arm_3);
-            //auto m4 = robot.GetMotor(motor_t::arm_4);
             //status._reserved[off + (i++)] = asex_Pos[5];
             status._reserved[26] = asex_Pos[6]; // asex_Pos[12];     // -> cloud q2
             status._reserved[27] = asex_Pos[7];
@@ -205,10 +175,6 @@ namespace ercp {
 
         if (GetSettings().Device.Module.Arm()) {
             // ?????????
-            // auto m1 = robot.GetMotor(motor_t::arm_1);
-            // auto m2 = robot.GetMotor(motor_t::arm_2);
-            // auto m3 = robot.GetMotor(motor_t::arm_3);
-            // auto m4 = robot.GetMotor(motor_t::arm_4);
             //status._reserved[off + (i++)] = asex_Pos[18];
             //status._reserved[off + (i++)] = asex_Pos[19]; // -> cloud q2
             status._reserved[off + (i++)] = robot.BeckhoffGetERCPDeliverPos();
@@ -413,3 +379,4 @@ namespace ercp {
 
 
 } // namespace ercp
+

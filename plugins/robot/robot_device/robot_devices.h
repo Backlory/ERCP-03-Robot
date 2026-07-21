@@ -17,9 +17,6 @@
 struct Arm_Interface;
 
 namespace device {
-    namespace cml {
-        class CML_Motor;
-    } // namespace cml
     namespace clamp {
         class ClampMotor_Device;
     } // namespace clamp
@@ -109,3 +106,4 @@ namespace ercp {
 #pragma endregion
 
 } // namespace ercp
+
