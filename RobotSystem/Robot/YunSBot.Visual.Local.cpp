@@ -8,7 +8,6 @@
  * @copyright Copyright (c) 2022 SIA-ILSR
  *
  */
-#include "net/encoder.hpp"
 #include "net/udp_client.hpp"
 #include "robot_settings.hpp"
 #include "YunSBot.h"
@@ -21,6 +20,16 @@ namespace net {
         {
             dst = std::move(packet);
             return true;
+        }
+
+        template <>
+        void cmd_client::enter()
+        {
+        }
+
+        template <>
+        void cmd_client::exit()
+        {
         }
 
     } // namespace udp

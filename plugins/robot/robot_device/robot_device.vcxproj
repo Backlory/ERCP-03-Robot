@@ -12,13 +12,6 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="..\..\lib\drivers\src\beckhoff_driver.cpp" />
-    <ClCompile Include="..\..\lib\drivers\src\modbus.cpp" />
-    <ClCompile Include="..\..\lib\drivers\src\serial\clamp_driver.cpp" />
-    <ClCompile Include="..\..\lib\drivers\src\serial\modbus_driver.cpp" />
-    <ClCompile Include="..\..\lib\drivers\src\serial\nimotion_driver.cpp" />
-    <ClCompile Include="..\..\lib\drivers\src\serial\serial_bus.cpp" />
-    <ClCompile Include="..\..\lib\drivers\src\serial\stepm_driver.cpp" />
-    <ClCompile Include="..\..\lib\drivers\src\serial\tension_driver.cpp" />
     <ClCompile Include="src\robot_error.cpp" />
     <ClCompile Include="src\robot_settings.cpp" />
     <ClCompile Include="src\robot_device.cpp" />
@@ -30,7 +23,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\lib\drivers\src\beckhoff_driver.hpp" />
-    <ClInclude Include="..\lib\drivers\src\Device.hpp" />
+    <ClInclude Include="..\..\lib\drivers\src\Device.hpp" />
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>16.0</VCProjectVersion>
@@ -57,10 +50,8 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <Import Project="$(SolutionDir)msbuild\dependencies\Boost.props" />
   <Import Project="$(SolutionDir)msbuild\dependencies\Tbb.props" />
-  <Import Project="$(SolutionDir)msbuild\dependencies\Eigen.props" />
   <Import Project="$(SolutionDir)msbuild\dependencies\Yaml.props" />
   <Import Project="$(SolutionDir)msbuild\dependencies\Beckhoff.props" />
-  <Import Project="$(SolutionDir)msbuild\dependencies\Sophus.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="Shared">

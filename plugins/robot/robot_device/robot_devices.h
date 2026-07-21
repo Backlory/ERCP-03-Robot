@@ -1,38 +1,12 @@
 ﻿#pragma once
-#include <map>
-#include <vector>
-#include <future>
-#include <Eigen/Dense>
-#include <Sophus/se3.hpp>
-#include <boost/asio.hpp>
-#include <boost/atomic.hpp>
-#include <boost/signals2/signal.hpp>
-#include <tbb/concurrent_map.h>
-
-#include <task.hpp>
+#include <basetsd.h>
+#include <memory>
+#include <string>
 #include "utils.h"
 #include "robot_config.h"
 #include "yunsbot_config.h"
 
-struct Arm_Interface;
-
-namespace device {
-    namespace clamp {
-        class ClampMotor_Device;
-    } // namespace clamp
-
-    namespace serial {
-        namespace stepm {
-            class StepMotor;
-        } // namespace stepm
-    } // namespace serial
-} // namespace device
-
 namespace ercp {
-
-    using namespace Eigen;
-    using namespace Sophus;
-    using namespace device;
 
     class RobotDevice {
     public:

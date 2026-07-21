@@ -15,77 +15,6 @@
     </Filter>
   </ItemGroup>
   <ItemGroup>
-    <None Include="res\Background.bmp">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="res\Doctor.ico">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="res\Init.ico">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="res\Patient.ico">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="res\PatientID.ico">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="res\PatientInfo.ico">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="res\Remote.ico">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="res\StartupShutdown.ico">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="res\SCESR.ico">
-      <Filter>资源文件</Filter>
-    </None>
-    <None Include="res\SCESR.rc2">
-      <Filter>资源文件</Filter>
-    </None>
-  </ItemGroup>
-  <ItemGroup>
-    <ClInclude Include="ERCP\CV\include\CV_picture.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\CV\include\CvvImage.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\CV\include\stdafx.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\CV\include\targetver.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\Utils\Utils.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\NISampler.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\RobotArm.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\RobotBase.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\Utils.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\CV\CvUtils.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\CV\Siammask.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\CV\Tracker.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="ERCP\Utils\VideoCapture.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
     <ClInclude Include="Robot\YunSBot.h">
       <Filter>头文件</Filter>
     </ClInclude>
@@ -104,24 +33,9 @@
     <ClInclude Include="RPC\ArmModule.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="Robot\Kinematics\RobotArm_v2.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Robot\Kinematics\EndoScopy.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="Robot\Kinematics\RobotBase.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Robot\YunSBot.Base.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Robot\YunSBot.Ms.Local.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Robot\YunSBot.Visual.Local.cpp">
+    <ClCompile Include="main.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="Net\server.cpp">
@@ -133,43 +47,28 @@
     <ClCompile Include="Net\server.interface.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="main.cpp">
+    <ClCompile Include="Robot\YunSBot.Base.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Robot\Motions\Motions.Config.cpp">
+    <ClCompile Include="Robot\YunSBot.Ms.Local.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Robot\Motions\Motions.Cycles.cpp">
+    <ClCompile Include="Robot\YunSBot.Visual.Local.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Robot\Motions\Motions.StartStop.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="RPC\ArmModule.Actions.cpp">
+    <ClCompile Include="Robot\YunSBot.SituAware.Local.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="RPC\ArmModule.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Robot\Kinematics\RobotArm_v2.cpp">
+    <ClCompile Include="RPC\ArmModule.Actions.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
+    <ClCompile Include="Robot\Motions\Motions.Cycles.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="Robot\Motions\Motions.MoveArm.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Robot\Kinematics\EndoScopy.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Robot\Motions\Motions.Config.AuhuaDuodenum.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Robot\Motions\Motions.Config.Auhua.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Robot\Kinematics\RobotBase.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Robot\YunSBot.SituAware.Local.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

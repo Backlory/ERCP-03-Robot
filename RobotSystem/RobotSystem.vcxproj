@@ -38,8 +38,6 @@
   <Import Project="$(SolutionDir)msbuild\dependencies\Boost.props" />
   <Import Project="$(SolutionDir)msbuild\dependencies\Tbb.props" />
   <Import Project="$(SolutionDir)msbuild\dependencies\Eigen.props" />
-  <Import Project="$(SolutionDir)msbuild\dependencies\OpenCV.props" />
-  <Import Project="$(SolutionDir)msbuild\dependencies\FFmpeg.props" />
   <Import Project="$(SolutionDir)msbuild\dependencies\Poco.props" />
   <Import Project="$(SolutionDir)msbuild\dependencies\Yaml.props" />
   <Import Project="$(SolutionDir)msbuild\dependencies\Sophus.props" />
@@ -65,8 +63,8 @@
     <ClCompile>
       <PrecompiledHeader>NotUsing</PrecompiledHeader>
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
-      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;NOMINMAX;CONSOLE;_AFXDLL;_DEBUG;DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>.;$(SolutionDir)plugins\robot\robot_device;$(SolutionDir)plugins\lib\navi_mods;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;NOMINMAX;CONSOLE;_AFXDLL;_DEBUG;DEBUG;_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>.;$(SolutionDir)plugins\robot\robot_device;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <DisableSpecificWarnings>4267;4251;4522;4838;4305;4244;4190;4101;4996;4275;4091;%(DisableSpecificWarnings)</DisableSpecificWarnings>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <SupportJustMyCode>false</SupportJustMyCode>
@@ -104,8 +102,8 @@
       <Optimization>MaxSpeed</Optimization>
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
-      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;NOMINMAX;CONSOLE;_AFXDLL;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>.;$(SolutionDir)plugins\robot\robot_device;$(SolutionDir)plugins\lib\navi_mods;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;NOMINMAX;CONSOLE;_AFXDLL;NDEBUG;_SILENCE_CXX17_ITERATOR_BASE_CLASS_DEPRECATION_WARNING;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>.;$(SolutionDir)plugins\robot\robot_device;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <LanguageStandard>stdcpp17</LanguageStandard>
       <BasicRuntimeChecks>Default</BasicRuntimeChecks>
       <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
@@ -132,18 +130,6 @@
     <PostBuildEvent />
   </ItemDefinitionGroup>
   <ItemGroup>
-    <None Include="res\Background.bmp" />
-    <None Include="res\Doctor.ico" />
-    <None Include="res\Init.ico" />
-    <None Include="res\Patient.ico" />
-    <None Include="res\PatientID.ico" />
-    <None Include="res\PatientInfo.ico" />
-    <None Include="res\Remote.ico" />
-    <None Include="res\StartupShutdown.ico" />
-    <None Include="res\SCESR.ico" />
-    <None Include="res\SCESR.rc2" />
-  </ItemGroup>
-  <ItemGroup>
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Net\server.cpp" />
     <ClCompile Include="Net\server.handler.cpp" />
@@ -156,7 +142,6 @@
     <ClCompile Include="RPC\ArmModule.Actions.cpp" />
     <ClCompile Include="Robot\Motions\Motions.Cycles.cpp" />
     <ClCompile Include="Robot\Motions\Motions.MoveArm.cpp" />
-    <ClCompile Include="Robot\Motions\Motions.Config.cpp" />
     <ClInclude Include="Net\server.h" />
     <ClInclude Include="Net\server.handler.h" />
     <ClInclude Include="Net\server.interface.h" />

@@ -12,10 +12,6 @@ using namespace task;
 
 namespace ercp {
 
-    extern const double CUTTER_NEGLIM;
-    extern const double CUTTER_POSLIM;
-    extern const double CUTTER_SPEED_RATIO;
-
 #define CMD_BACK     (11)
 #define sleep_ms(ms) std::this_thread::sleep_for(std::chrono::milliseconds(ms))
 
@@ -32,7 +28,7 @@ namespace ercp {
     }
 
     YunSBot::_context::_context()
-        : cannula_bowing_pos(CUTTER_POSLIM)
+        : cannula_bowing_pos(2000.0)
     {
     }
 

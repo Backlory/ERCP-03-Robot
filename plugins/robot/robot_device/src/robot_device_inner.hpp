@@ -1,33 +1,14 @@
-﻿#include <assert.h>
-#include <beauty/beauty.hpp>
-#include <task.hpp>
-
-#include "itcp_driver.hpp"
+#include <assert.h>
 #include "beckhoff_driver.hpp"
-#include "serial/stepm_driver.hpp"
-#include "serial/tension_driver.hpp"
 
 #include "../robot_settings.hpp"
 #include "../robot_devices.h"
-
 #include <mmsystem.h>
-#pragma comment(lib, "winmm.lib")
 
-using namespace task;
-
-class ScopeForce;
-class ScopeTorque;
-class CannulaForce;
-class WireForce;
 
 namespace ercp {
 
     using namespace device;
-    using namespace Eigen;
-    using Vector6d = Eigen::Vector<double, 6>;
-    using tcp = boost::asio::ip::tcp;
-
-    static const double AutoControlPeriod = 0.005;
 
     ///////////////////////////////////////////////////////////////////////////
 

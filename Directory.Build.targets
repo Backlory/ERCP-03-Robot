@@ -29,22 +29,9 @@
           Condition="'$(MSBuildProjectName)' == 'ErcpApp'">
     <ItemGroup>
       <!-- This wildcard list is only used to remove files copied by the old wildcard staging rule. -->
-      <ErcpManagedRuntimeDll Include="$(ThirdPartyRoot)OpenCV\x64\vc15\bin\*.dll" />
-      <ErcpManagedRuntimeDll Include="$(ThirdPartyRoot)ffmpeg-master-latest-win64-gpl-shared\bin\*.dll" />
       <ErcpManagedRuntimeDll Include="$(ThirdPartyRoot)oneapi-tbb-2022.3.0\redist\intel64\vc14\*.dll" />
       <ErcpManagedRuntimeDll Include="$(ThirdPartyRoot)poco\bin\*.dll" />
       <ErcpObsoleteBuildArtifact Include="$(AppOutputDir)library.lib;$(AppOutputDir)library.idb;$(AppOutputDir)library.pdb" />
-      <ErcpObsoleteBuildArtifact Include="$(AppOutputDir)navi_mods.lib;$(AppOutputDir)navi_mods.idb;$(AppOutputDir)navi_mods.pdb" />
-      <ErcpObsoleteBuildArtifact Include="$(AppOutputDir)net_mods.lib;$(AppOutputDir)net_mods.idb;$(AppOutputDir)net_mods.pdb" />
-      <ErcpObsoleteBuildArtifact Include="$(AppOutputDir)RemoteCpu.lib;$(AppOutputDir)RemoteCpu.idb;$(AppOutputDir)RemoteCpu.pdb" />
-      <ErcpRuntimeDll Include="$(ThirdPartyRoot)OpenCV\x64\vc15\bin\opencv_world450d.dll"
-                      Condition="'$(Configuration)' == 'Debug'" />
-      <ErcpRuntimeDll Include="$(ThirdPartyRoot)OpenCV\x64\vc15\bin\opencv_world450.dll"
-                      Condition="'$(Configuration)' == 'Release'" />
-      <ErcpRuntimeDll Include="$(ThirdPartyRoot)ffmpeg-master-latest-win64-gpl-shared\bin\avcodec-62.dll" />
-      <ErcpRuntimeDll Include="$(ThirdPartyRoot)ffmpeg-master-latest-win64-gpl-shared\bin\avutil-60.dll" />
-      <ErcpRuntimeDll Include="$(ThirdPartyRoot)ffmpeg-master-latest-win64-gpl-shared\bin\swresample-6.dll" />
-      <ErcpRuntimeDll Include="$(ThirdPartyRoot)ffmpeg-master-latest-win64-gpl-shared\bin\swscale-9.dll" />
       <ErcpRuntimeDll Include="$(ThirdPartyRoot)oneapi-tbb-2022.3.0\redist\intel64\vc14\tbb12_debug.dll"
                       Condition="'$(Configuration)' == 'Debug'" />
       <ErcpRuntimeDll Include="$(ThirdPartyRoot)oneapi-tbb-2022.3.0\redist\intel64\vc14\tbb12.dll"
