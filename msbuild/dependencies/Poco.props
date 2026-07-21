@@ -1,16 +1,22 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemDefinitionGroup>
     <ClCompile>
       <AdditionalIncludeDirectories>$(ThirdPartyRoot)poco\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PreprocessorDefinitions>POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
-    <Link><AdditionalLibraryDirectories>$(ThirdPartyRoot)poco\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories></Link>
+    <Link>
+      <AdditionalLibraryDirectories>$(ThirdPartyRoot)poco\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)' == 'Debug'">
-    <Link><AdditionalDependencies>PocoFoundationmdd.lib;PocoNetmdd.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link>
+      <AdditionalDependencies>PocoFoundationmdd.lib;PocoNetmdd.lib;PocoJSONmdd.lib;PocoUtilmdd.lib;PocoXMLmdd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)' == 'Release'">
-    <Link><AdditionalDependencies>PocoFoundationmd.lib;PocoNetmd.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
+    <Link>
+      <AdditionalDependencies>PocoFoundationmd.lib;PocoNetmd.lib;PocoJSONmd.lib;PocoUtilmd.lib;PocoXMLmd.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
 </Project>

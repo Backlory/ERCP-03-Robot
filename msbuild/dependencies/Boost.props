@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemDefinitionGroup>
     <ClCompile>
@@ -11,12 +11,12 @@
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)' == 'Debug'">
     <Link>
-      <AdditionalDependencies>libboost_atomic-vc142-mt-gd-x64-1_74.lib;libboost_chrono-vc142-mt-gd-x64-1_74.lib;libboost_date_time-vc142-mt-gd-x64-1_74.lib;libboost_filesystem-vc142-mt-gd-x64-1_74.lib;libboost_system-vc142-mt-gd-x64-1_74.lib;libboost_thread-vc142-mt-gd-x64-1_74.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libboost_atomic-vc142-mt-gd-x64-1_74.lib;libboost_chrono-vc142-mt-gd-x64-1_74.lib;libboost_date_time-vc142-mt-gd-x64-1_74.lib;libboost_filesystem-vc142-mt-gd-x64-1_74.lib;libboost_serialization-vc142-mt-gd-x64-1_74.lib;libboost_system-vc142-mt-gd-x64-1_74.lib;libboost_thread-vc142-mt-gd-x64-1_74.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)' == 'Release'">
     <Link>
-      <AdditionalDependencies>libboost_atomic-vc142-mt-x64-1_74.lib;libboost_chrono-vc142-mt-x64-1_74.lib;libboost_date_time-vc142-mt-x64-1_74.lib;libboost_filesystem-vc142-mt-x64-1_74.lib;libboost_system-vc142-mt-x64-1_74.lib;libboost_thread-vc142-mt-x64-1_74.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libboost_atomic-vc142-mt-x64-1_74.lib;libboost_chrono-vc142-mt-x64-1_74.lib;libboost_date_time-vc142-mt-x64-1_74.lib;libboost_filesystem-vc142-mt-x64-1_74.lib;libboost_serialization-vc142-mt-x64-1_74.lib;libboost_system-vc142-mt-x64-1_74.lib;libboost_thread-vc142-mt-x64-1_74.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
 </Project>

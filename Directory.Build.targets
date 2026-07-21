@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project>
   <!-- Apply the output contract after legacy project files so local overrides cannot split artifacts. -->
   <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.vcxproj' and '$(ConfigurationType)' == 'StaticLibrary'">
@@ -61,4 +61,23 @@
           DestinationFolder="$(AppOutputDir)"
           SkipUnchangedFiles="true" />
   </Target>
+
+  <Target Name="CopyRobotRuntimeDependencies"
+          AfterTargets="Build"
+          Condition="'$(MSBuildProjectName)' == 'robot_device'">
+    <ItemGroup>
+      <RobotRuntimeDll Include="$(ThirdPartyRoot)Beckhoff\x64\TcAdsDll.dll"
+                       Condition="Exists('$(ThirdPartyRoot)Beckhoff\x64\TcAdsDll.dll')" />
+      <RobotRuntimeDll Include="$(ThirdPartyRoot)Beckhoff\TcAdsDll.dll"
+                       Condition="'@(RobotRuntimeDll)' == '' and Exists('$(ThirdPartyRoot)Beckhoff\TcAdsDll.dll')" />
+      <RobotRuntimeDll Include="$(ThirdPartyRoot)oneapi-tbb-2022.3.0\redist\intel64\vc14\tbb12_debug.dll"
+                       Condition="'$(Configuration)' == 'Debug'" />
+      <RobotRuntimeDll Include="$(ThirdPartyRoot)oneapi-tbb-2022.3.0\redist\intel64\vc14\tbb12.dll"
+                       Condition="'$(Configuration)' == 'Release'" />
+    </ItemGroup>
+    <Copy SourceFiles="@(RobotRuntimeDll)"
+          DestinationFolder="$(OutDir)"
+          SkipUnchangedFiles="true" />
+  </Target>
 </Project>
+

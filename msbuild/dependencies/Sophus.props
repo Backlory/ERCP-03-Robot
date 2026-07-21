@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <!-- Headers live under 3rdparty\sophus\sophus\*.hpp; code includes <sophus/...> or <Sophus/...>. -->
+      <AdditionalIncludeDirectories>$(ThirdPartyRoot)sophus;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+  </ItemDefinitionGroup>
+</Project>

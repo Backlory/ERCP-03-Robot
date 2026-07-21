@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="utf-8"?>
+﻿<?xml version="1.0" encoding="utf-8"?>
 <Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup Label="ProjectConfigurations">
     <ProjectConfiguration Include="Debug|x64">
@@ -11,9 +11,6 @@
     </ProjectConfiguration>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="..\..\..\plugins\lib\drivers\src\arm_driver\ur\ur_protocol.cpp" />
-    <ClCompile Include="..\..\..\plugins\lib\drivers\src\cml_driver.cpp" />
-    <ClCompile Include="..\..\..\plugins\lib\drivers\src\gpio_driver.cpp" />
     <ClCompile Include="..\..\lib\drivers\src\beckhoff_driver.cpp" />
     <ClCompile Include="..\..\lib\drivers\src\modbus.cpp" />
     <ClCompile Include="..\..\lib\drivers\src\serial\clamp_driver.cpp" />
@@ -28,9 +25,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\lib\library\library.vcxproj">
-      <Project>{fc408218-7c26-45a6-8103-04a64f750697}</Project>
-    </ProjectReference>
-    <ProjectReference Include="..\lib\library\library.vcxproj">
       <Project>{fc408218-7c26-45a6-8103-04a64f750697}</Project>
     </ProjectReference>
   </ItemGroup>
@@ -61,21 +55,21 @@
     <CharacterSet>Unicode</CharacterSet>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Boost.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Tbb.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Eigen.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Yaml.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Beckhoff.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Sophus.props" />
   <ImportGroup Label="ExtensionSettings">
   </ImportGroup>
   <ImportGroup Label="Shared">
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\..\..\properties\Solution.props" />
-    <Import Project="..\..\..\properties\Drivers.Debug.props" />
-    <Import Project="..\..\..\properties\Enviroment.Debug.props" />
   </ImportGroup>
   <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
-    <Import Project="..\..\..\properties\Solution.props" />
-    <Import Project="..\..\..\properties\Enviroment.Release.props" />
-    <Import Project="..\..\..\properties\Drivers.Release.props" />
   </ImportGroup>
   <PropertyGroup Label="UserMacros" />
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
@@ -89,14 +83,12 @@
       <WarningLevel>TurnOffAllWarnings</WarningLevel>
       <PreprocessorDefinitions>ROBOT_EXPORT;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>.;$(SolutionDir)include;$(SolutionDir)plugins\arm_driver;$(SolutionDir)plugins\lingcai_param;$(SolutionDir)AutomaticSystem;$(SolutionDir)AutomaticSystem\Drivers;$(ERCP_ENV_ROOT)\Beckhoff\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.;$(SolutionDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/MP %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ERCP_ENV_ROOT)\Beckhoff\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>TcAdsDll.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -106,7 +98,7 @@
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>ROBOT_EXPORT;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
-      <AdditionalIncludeDirectories>.;$(SolutionDir)include;$(SolutionDir)plugins\arm_driver;$(SolutionDir)plugins\lingcai_param;$(SolutionDir)AutomaticSystem;$(SolutionDir)AutomaticSystem\Drivers;$(ERCP_ENV_ROOT)\Beckhoff\Include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>.;$(SolutionDir)include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalOptions>/MP %(AdditionalOptions)</AdditionalOptions>
     </ClCompile>
     <Link>
@@ -114,11 +106,10 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalLibraryDirectories>$(ERCP_ENV_ROOT)\Beckhoff\lib\x64;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-      <AdditionalDependencies>TcAdsDll.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
   </ImportGroup>
 </Project>
+
