@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(ERCP_ENV_ROOT)\libtorch\include;$(ERCP_ENV_ROOT)\libtorch\include\torch\csrc\api\include;$(ERCP_ENV_ROOT)\torchvision\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ClCompile>
+    <Link>
+      <AdditionalLibraryDirectories>$(ERCP_ENV_ROOT)\libtorch\lib\release;$(ERCP_ENV_ROOT)\torchvision\lib\release;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>c10.lib;c10_cuda.lib;libprotobuf-lite.lib;libprotobuf.lib;libprotoc.lib;pthreadpool.lib;pytorch_jni.lib;torch.lib;torch_cpu.lib;torch_cuda.lib;torch_cuda_cpp.lib;torch_cuda_cu.lib;torchvision-cuda.lib;-INCLUDE:?warp_size@cuda@at@@YAHXZ;-INCLUDE:?searchsorted_cuda@native@at@@YA?AVTensor@2@AEBV32@0_N1@Z;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup />
+</Project>

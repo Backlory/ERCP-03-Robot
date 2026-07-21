@@ -1,0 +1,67 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="src">
+      <UniqueIdentifier>{90db5ca6-b1be-40bc-9d86-4db096d2399d}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="devices">
+      <UniqueIdentifier>{2cf8c958-1aa1-4c17-a0db-943795327411}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="devices\arm">
+      <UniqueIdentifier>{b32ed7df-f09e-45fa-b290-dd70ac541de0}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="devices\arm\ur">
+      <UniqueIdentifier>{6a290c38-f453-4933-b72a-142c2d16842b}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="devices\arm\elite">
+      <UniqueIdentifier>{ed5b5211-5ce4-416c-a82b-bd8ee5c34c9c}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="devices\device">
+      <UniqueIdentifier>{ce69790a-d85c-49eb-9864-66ddcb732c92}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="serial">
+      <UniqueIdentifier>{623c0d55-cbed-4f7b-9af0-4a7cebf62173}</UniqueIdentifier>
+    </Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="src\robot_device.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\robot_settings.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\robot_error.cpp">
+      <Filter>src</Filter>
+    </ClCompile>
+    <ClCompile Include="src\AmpPDO.cpp" />
+    <ClCompile Include="..\..\..\plugins\lib\drivers\src\arm_driver\ur\ur_protocol.cpp" />
+    <ClCompile Include="..\..\..\plugins\lib\drivers\src\cml_driver.cpp" />
+    <ClCompile Include="..\..\..\plugins\lib\drivers\src\gpio_driver.cpp" />
+    <ClCompile Include="..\..\lib\drivers\src\serial\nimotion_driver.cpp">
+      <Filter>serial</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\lib\drivers\src\serial\serial_bus.cpp">
+      <Filter>serial</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\lib\drivers\src\serial\stepm_driver.cpp">
+      <Filter>serial</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\lib\drivers\src\serial\modbus_driver.cpp">
+      <Filter>serial</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\lib\drivers\src\modbus.cpp" />
+    <ClCompile Include="..\..\lib\drivers\src\serial\clamp_driver.cpp">
+      <Filter>serial</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\lib\drivers\src\serial\tension_driver.cpp">
+      <Filter>serial</Filter>
+    </ClCompile>
+    <ClCompile Include="..\..\lib\drivers\src\beckhoff_driver.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="..\lib\drivers\src\Device.hpp">
+      <Filter>devices</Filter>
+    </ClInclude>
+    <ClInclude Include="..\..\lib\drivers\src\beckhoff_driver.hpp" />
+  </ItemGroup>
+</Project>

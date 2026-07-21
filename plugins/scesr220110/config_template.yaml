@@ -1,0 +1,40 @@
+﻿basic:
+    test_mode: true
+    use_joystick: false
+    ndi_channels: 4
+    pusher_com: COM1
+    stepper_com: \\.\COM15
+
+module:
+    base: true      # 基座
+    arm: true       # 机械臂
+    operator: true  # 操作器
+    cannula: true   # 切开刀
+
+# 记录文档
+logfile:
+    auto_all: false
+    # 以下配置只在 auto_all 为 false 时起作用
+    mainlog: true
+    motor: true
+    ndi_sensor: true
+    operation: true
+    robot: true
+
+# 录屏
+capture:
+    auto_all: false
+    # 以下配置只在 auto_all 为 false 时起作用
+    main: false
+    second: false
+
+image:
+    width: 640  # 输入尺寸
+    height: 480 # 输入尺寸
+    # crop: [650, 0, 1920, 1080] # 裁剪区域
+
+sensor:
+    itcp: 192.168.0.30:502
+
+visualization:
+    urdf_path: urdf

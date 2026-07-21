@@ -1,0 +1,46 @@
+basic:
+  debug: false
+  verbose: 1
+  master: 127.0.0.1
+device:
+  use_joystic: true
+  ndi_channels: 4
+  scope_type: -1
+  pusher_port: \\.\COM1
+  stepper_port: \\.\COM15
+  offset:
+    big: 0
+    small: 0
+  module:
+    use_base: false
+    use_arm: true
+    use_operator: true
+    use_cannula: false
+    use_jnject: false
+  itcp:
+    enable: true
+    use_log: false
+    address: 192.168.0.30:502
+    force_channel: 6
+    torque_channel: 7
+    six_axes_channel: 0
+    verbose: 1
+image:
+  witdh: 640
+  height: 480
+  path: 0
+  crop:
+    - 0
+    - 0
+    - 0
+    - 0
+visualization:
+  urdf_path: urdf
+log:
+  all: false
+  use_main: true
+  use_device: true
+  use_sensor: true
+  use_server: true
+  use_operation: true
+  use_robot: true

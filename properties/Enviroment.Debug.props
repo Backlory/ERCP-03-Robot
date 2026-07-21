@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ImportGroup Label="PropertySheets" />
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup />
+  <ItemDefinitionGroup>
+    <ClCompile />
+    <Link>
+      <AdditionalLibraryDirectories>$(ERCP_ENV_ROOT)\boost\lib64-msvc-14.2;$(ERCP_ENV_ROOT)\tbb\lib\intel64\vc14;$(ERCP_ENV_ROOT)\yaml-cpp\lib;$(ERCP_ENV_ROOT)\poco\lib;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>yaml-cppd.lib;tbb12_debug.lib;tbbbind_2_0_debug.lib;tbbbind_2_5_debug.lib;tbbbind_debug.lib;tbbmalloc_debug.lib;tbbmalloc_proxy_debug.lib;tbb_debug.lib;libboost_atomic-vc142-mt-gd-x64-1_74.lib;libboost_chrono-vc142-mt-gd-x64-1_74.lib;libboost_container-vc142-mt-gd-x64-1_74.lib;libboost_coroutine-vc142-mt-gd-x64-1_74.lib;libboost_date_time-vc142-mt-gd-x64-1_74.lib;libboost_exception-vc142-mt-gd-x64-1_74.lib;libboost_filesystem-vc142-mt-gd-x64-1_74.lib;libboost_locale-vc142-mt-gd-x64-1_74.lib;libboost_serialization-vc142-mt-gd-x64-1_74.lib;libboost_system-vc142-mt-gd-x64-1_74.lib;libboost_thread-vc142-mt-gd-x64-1_74.lib;libboost_timer-vc142-mt-gd-x64-1_74.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <ClCompile>
+      <AdditionalIncludeDirectories>$(SolutionDir)plugins\lib\drivers\3rdparty\fmt-7.1.3\include;$(SolutionDir)plugins\lib\drivers\3rdparty\beauty\include;$(SolutionDir)plugins\lib\drivers\3rdparty\loguru\include;$(SolutionDir)plugins\lib\drivers\3rdparty\loguru\include\loguru;$(SolutionDir)plugins\lib\drivers\dep\include;$(ERCP_ENV_ROOT)\boost;$(ERCP_ENV_ROOT)\tbb\include;$(ERCP_ENV_ROOT)\eigen\include\eigen3;$(ERCP_ENV_ROOT)\poco\include;$(ERCP_ENV_ROOT)\yaml-cpp\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>POCO_STATIC;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemGroup />
+</Project>

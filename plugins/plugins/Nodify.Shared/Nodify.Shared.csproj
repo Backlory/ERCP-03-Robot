@@ -1,0 +1,31 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WindowsDesktop">
+  <PropertyGroup>
+    <UseWPF>true</UseWPF>
+    <TargetFrameworks>net472</TargetFrameworks>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(TargetFramework)'=='net472' OR '$(TargetFramework)'=='net48'">
+    <LangVersion>8.0</LangVersion>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Release|net472|AnyCPU'">
+    <OutputPath>..\..\..\build\Release\bin\</OutputPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(TargetFramework)|$(Platform)'=='Debug|net472|AnyCPU'">
+    <OutputPath>..\..\..\build\Debug\bin\</OutputPath>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Nodify" Version="1.8.0" />
+  </ItemGroup>
+  <ItemGroup>
+    <Page Update="Themes\Controls.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Update="Themes\Generic.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+    <Page Update="Themes\Icons.xaml">
+      <SubType>Designer</SubType>
+    </Page>
+  </ItemGroup>
+
+</Project>

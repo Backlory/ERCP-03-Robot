@@ -1,0 +1,12 @@
+[submodule "plugins/panel"]
+	path = plugins/panel
+	url  = git@gitee.com:ilsr/ercp-panel.git
+
+[submodule "plugins/lib/drivers"]
+	url  = https://gitee.com/ilsr/drivers
+	path = plugins/lib/drivers
+
+[submodule "plugins/lib/codec"]
+	url  = https://gitee.com/ilsr/codec
+	path = plugins/lib/codec
+

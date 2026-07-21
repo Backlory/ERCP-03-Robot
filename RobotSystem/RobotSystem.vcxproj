@@ -1,0 +1,206 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" ToolsVersion="12.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{EABF9B7D-2344-46D3-9AB3-64F6E10A4C08}</ProjectGuid>
+    <RootNamespace>SCESR</RootNamespace>
+    <Keyword>MFCProj</Keyword>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <UseOfMfc>false</UseOfMfc>
+    <PlatformToolset>v142</PlatformToolset>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings">
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="..\properties\Solution.props" />
+    <Import Project="..\properties\Enviroment.Debug.props" />
+    <Import Project="..\properties\Drivers.Debug.props" />
+    <Import Project="..\properties\Vision.Cpu.Debug.props" />
+  </ImportGroup>
+  <ImportGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="PropertySheets">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+    <Import Project="..\properties\Solution.props" />
+    <Import Project="..\properties\Drivers.Release.props" />
+    <Import Project="..\properties\Enviroment.Release.props" />
+    <Import Project="..\properties\Vision.Cpu.Release.props" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <EnableManagedIncrementalBuild>true</EnableManagedIncrementalBuild>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <LinkIncremental>true</LinkIncremental>
+    <EnableManagedIncrementalBuild>true</EnableManagedIncrementalBuild>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;NOMINMAX;CONSOLE;_AFXDLL;_DEBUG;DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>.;$(SolutionDir)plugins\robot\robot_device;$(SolutionDir)plugins\lib\navi_mods;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <DisableSpecificWarnings>4267;4251;4522;4838;4305;4244;4190;4101;4996;4275;4091;%(DisableSpecificWarnings)</DisableSpecificWarnings>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <SupportJustMyCode>false</SupportJustMyCode>
+      <RuntimeLibrary>MultiThreadedDebugDLL</RuntimeLibrary>
+      <InlineFunctionExpansion>Disabled</InlineFunctionExpansion>
+      <BasicRuntimeChecks>EnableFastChecks</BasicRuntimeChecks>
+      <Optimization>Disabled</Optimization>
+      <PrecompiledHeaderFile />
+      <AdditionalOptions>/utf-8 /MP6 /bigobj %(AdditionalOptions)</AdditionalOptions>
+      <ConformanceMode>false</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <ShowProgress>NotSet</ShowProgress>
+      <OptimizeReferences>
+      </OptimizeReferences>
+      <AdditionalLibraryDirectories>$(ERCP_ENV_ROOT)\CML\lib\x64\vc16;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>winmm.lib;version.lib;ws2_32.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <Midl>
+      <MkTypLibCompatible>false</MkTypLibCompatible>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0804</Culture>
+      <PreprocessorDefinitions>_DEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <PostBuildEvent />
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>TurnOffAllWarnings</WarningLevel>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <Optimization>MaxSpeed</Optimization>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;_CRT_SECURE_NO_WARNINGS;NOMINMAX;CONSOLE;_AFXDLL;NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>.;$(SolutionDir)plugins\robot\robot_device;$(SolutionDir)plugins\lib\navi_mods;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <LanguageStandard>stdcpp17</LanguageStandard>
+      <BasicRuntimeChecks>Default</BasicRuntimeChecks>
+      <RuntimeLibrary>MultiThreadedDLL</RuntimeLibrary>
+      <InlineFunctionExpansion>OnlyExplicitInline</InlineFunctionExpansion>
+      <AdditionalOptions>/utf-8 /MP6 /bigobj %(AdditionalOptions)</AdditionalOptions>
+      <ConformanceMode>false</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <GenerateDebugInformation>true</GenerateDebugInformation>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+      <AdditionalLibraryDirectories>$(ERCP_ENV_ROOT)\CML\lib\x64\vc16;%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
+      <AdditionalDependencies>winmm.lib;version.lib;ws2_32.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+    <Midl>
+      <MkTypLibCompatible>false</MkTypLibCompatible>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+    </Midl>
+    <ResourceCompile>
+      <Culture>0x0804</Culture>
+      <PreprocessorDefinitions>NDEBUG;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(IntDir);%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+    </ResourceCompile>
+    <PostBuildEvent />
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <None Include="res\Background.bmp" />
+    <None Include="res\Doctor.ico" />
+    <None Include="res\Init.ico" />
+    <None Include="res\Patient.ico" />
+    <None Include="res\PatientID.ico" />
+    <None Include="res\PatientInfo.ico" />
+    <None Include="res\Remote.ico" />
+    <None Include="res\StartupShutdown.ico" />
+    <None Include="res\SCESR.ico" />
+    <None Include="res\SCESR.rc2" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="Net\server.cpp" />
+    <ClCompile Include="Net\server.handler.cpp" />
+    <ClCompile Include="Net\server.interface.cpp" />
+    <ClCompile Include="Robot\Kinematics\EndoScopy.cpp" />
+    <ClCompile Include="Robot\Kinematics\RobotBase.cpp" />
+    <ClCompile Include="Robot\Motions\Motions.Config.Auhua.cpp" />
+    <ClCompile Include="Robot\Motions\Motions.Config.AuhuaDuodenum.cpp" />
+    <ClCompile Include="Robot\Motions\Motions.MoveArm.cpp" />
+    <ClCompile Include="Robot\Kinematics\RobotArm_v2.cpp" />
+    <ClCompile Include="Robot\Motions\Motions.Cycles.cpp" />
+    <ClCompile Include="Robot\Motions\Motions.Config.cpp" />
+    <ClCompile Include="Robot\YunSBot.Base.cpp" />
+    <ClCompile Include="Robot\YunSBot.Ms.Local.cpp" />
+    <ClCompile Include="Robot\Motions\Motions.StartStop.cpp" />
+    <ClCompile Include="Robot\YunSBot.Visual.Local.cpp" />
+    <ClCompile Include="RPC\ArmModule.Actions.cpp" />
+    <ClCompile Include="RPC\ArmModule.cpp" />
+    <ClCompile Include="Robot\YunSBot.SituAware.Local.cpp" />
+    <ClInclude Include="Net\server.h" />
+    <ClInclude Include="Net\server.handler.h" />
+    <ClInclude Include="Net\server.interface.h" />
+    <ClInclude Include="Robot\Kinematics\EndoScopy.h" />
+    <ClInclude Include="Robot\Kinematics\RobotArm_v2.h" />
+    <ClInclude Include="Robot\Kinematics\RobotBase.h" />
+    <ClInclude Include="Robot\YunSBot.h" />
+    <ClInclude Include="ERCP\CV\CvUtils.hpp" />
+    <ClInclude Include="ERCP\CV\include\CvvImage.h" />
+    <ClInclude Include="ERCP\CV\include\CV_picture.h" />
+    <ClInclude Include="ERCP\CV\include\stdafx.h" />
+    <ClInclude Include="ERCP\CV\include\targetver.h" />
+    <ClInclude Include="ERCP\CV\Siammask.hpp" />
+    <ClInclude Include="ERCP\CV\Tracker.hpp" />
+    <ClInclude Include="ERCP\NISampler.h" />
+    <ClInclude Include="ERCP\RobotArm.h" />
+    <ClInclude Include="ERCP\RobotBase.h" />
+    <ClInclude Include="ERCP\Utils.hpp" />
+    <ClInclude Include="ERCP\Utils\Utils.hpp" />
+    <ClInclude Include="ERCP\Utils\VideoCapture.hpp" />
+    <ClInclude Include="RPC\Module.hpp" />
+    <ClInclude Include="RPC\ArmModule.hpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\plugins\lib\library\library.vcxproj">
+      <Project>{fc408218-7c26-45a6-8103-04a64f750697}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\plugins\robot\robot_device\robot_device.vcxproj">
+      <Project>{df82b80e-15e6-4b4d-b936-60ac59c58500}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets">
+  </ImportGroup>
+  <ProjectExtensions>
+    <VisualStudio>
+      <UserProperties RESOURCE_FILE="SCESR.rc" />
+    </VisualStudio>
+  </ProjectExtensions>
+</Project>
