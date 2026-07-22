@@ -26,7 +26,7 @@
 
   <Target Name="CopyErcpRuntimeDependencies"
           AfterTargets="Build"
-          Condition="'$(MSBuildProjectName)' == 'ErcpApp'">
+          Condition="'$(MSBuildProjectName)' == 'RobotSystem'">
     <ItemGroup>
       <!-- This wildcard list is only used to remove files copied by the old wildcard staging rule. -->
       <ErcpManagedRuntimeDll Include="$(ThirdPartyRoot)oneapi-tbb-2022.3.0\redist\intel64\vc14\*.dll" />

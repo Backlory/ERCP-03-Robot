@@ -1,13 +1,13 @@
 basic:
   verbose: 1
-  master: 127.0.0.1
-  cloud: 192.168.1.100
+  master: 192.168.1.109       # 机器人控制主端ip
+  cloud: 192.168.1.100		 # 数据端IP
 device:
   module:
-    use_base: false
+    use_base: true
     use_arm: true
     use_operator: true
-    use_cannula: false
+    use_cannula: true
   beckhoff:
-    address: 127.0.0.1
+    address: 169.254.143.160.1.1  # 2-3-3
     port: 851

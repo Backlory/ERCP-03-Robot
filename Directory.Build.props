@@ -4,7 +4,7 @@
     <RepoRoot>$(MSBuildThisFileDirectory)</RepoRoot>
     <ThirdPartyRoot>$(RepoRoot)3rdparty\</ThirdPartyRoot>
     <NuGetPackageRoot Condition="'$(NuGetPackageRoot)' == ''">$(UserProfile)\.nuget\packages\</NuGetPackageRoot>
-    <AppOutputDir>$(RepoRoot)build\$(Configuration)\ERCPApp\</AppOutputDir>
+    <AppOutputDir>$(RepoRoot)build\$(Configuration)\RobotSystem\</AppOutputDir>
     <NativeLibOutputDir>$(RepoRoot)build\$(Configuration)\lib\</NativeLibOutputDir>
     <ProjectIntermediateDir>$(RepoRoot)build\$(Configuration)\obj\$(MSBuildProjectName)\</ProjectIntermediateDir>
     <PlatformTarget>x64</PlatformTarget>
