@@ -115,10 +115,8 @@ namespace server {
                 } else if (act == "clear") {
                     return arm.Rescue<rpc::ArmModule>(true);
                 } else if (act == "fold") {
-                    if (!yunsbot.base.IsChangeModel()) return false;
                     return arm.GotoState(rpc::arm_state_t::A3_Folded);
                 } else if (act == "open") {
-                    if (!yunsbot.base.IsChangeModel()) return false;
                     return arm.GotoState(rpc::arm_state_t::A4_Opened);
                 } else if (act == "follow") {
                     return arm.StartFollow();
@@ -135,15 +133,15 @@ namespace server {
         //-----------------------------------------------------------------------------
 
         std::map<std::string, std::function<device::state_t()>> device_mapper{
-            { u8"视觉",
+            { u8"云端",
                 []() {
-                    return YunSBot::GetInstance().visual.IsVisionOnline() //
+                    return YunSBot::GetInstance().situaware.IsOnline() //
                         ? device::state_t::Online
                         : device::state_t::Offline;
                 } },
             { u8"主端",
                 []() {
-                    return YunSBot::GetInstance().master.IsMasterOnline() //
+                    return YunSBot::GetInstance().master.IsOnline() //
                         ? device::state_t::Online
                         : device::state_t::Offline;
                 } },
@@ -206,9 +204,6 @@ namespace server {
         (motor_t::oper_small, "os")
         (motor_t::oper_pincer, "op")
         (motor_t::oper_rotate, "or")
-        (motor_t::base_1, "b1")
-        (motor_t::base_2, "b2")
-        (motor_t::base_3, "b3")
         (motor_t::cutter_rot, "cr")
         (motor_t::cutter_feed, "cf")
         (motor_t::cutter_bend, "cc")
@@ -225,9 +220,6 @@ namespace server {
         {motor_t::oper_small,      u8"小拨轮"},
         {motor_t::oper_pincer,     u8"抬钳器"},
         {motor_t::oper_rotate,     u8"镜体旋转"},
-        {motor_t::base_1,          u8"基座1"},
-        {motor_t::base_2,          u8"基座2"},
-        {motor_t::base_3,          u8"基座3"},
         {motor_t::cutter_rot,      u8"切开刀旋转"},
         {motor_t::cutter_feed,     u8"切开刀输送"},
         {motor_t::cutter_bend,     u8"切开刀弯曲"},

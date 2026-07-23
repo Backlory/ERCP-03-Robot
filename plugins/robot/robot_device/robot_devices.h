@@ -4,6 +4,7 @@
 #include <string>
 #include "utils.h"
 #include "robot_config.h"
+#include "beckhoff_snapshot.hpp"
 #include "yunsbot_config.h"
 
 namespace ercp {
@@ -30,9 +31,9 @@ namespace ercp {
 
         // 跟随数据
         virtual bool BeckhoffFollowData(unsigned long length, void* data) const = 0;
+        virtual std::uint32_t BeckhoffFollowDataResult(
+            unsigned long length, const void *data) const = 0;
         virtual bool BeckhoffFollowData_Oneclick(double target, double bigAngle, double smlAngle) const = 0;
-        // 基座移动
-        virtual bool BeckhoffBaseMove(unsigned long length, void *data) const = 0;
         virtual bool BeckhoffArmOperation(beckhoff_arm_operation iArmOper)const = 0;
 
 
@@ -49,6 +50,7 @@ namespace ercp {
         virtual bool BeckhoffEncoder(INT32 data[5])const = 0;
         virtual bool BeckhoffSensor(INT16 data[7])const = 0;
         virtual bool IsOpen() const = 0;
+        virtual device::beckhoff::BeckhoffSnapshot BeckhoffSnapshot() const = 0;
 
         virtual double BeckhoffFollowLength() const = 0;
         virtual bool Beckhoff_Switch(gpio_output_t out_switch)const = 0;

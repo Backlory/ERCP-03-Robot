@@ -22,6 +22,7 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\include\include\beckhoff_snapshot.hpp" />
     <ClInclude Include="..\..\lib\drivers\src\beckhoff_driver.hpp" />
     <ClInclude Include="..\..\lib\drivers\src\Device.hpp" />
   </ItemGroup>

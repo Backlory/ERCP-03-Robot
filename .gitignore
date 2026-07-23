@@ -365,8 +365,26 @@ MigrationBackup/
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
 plugins/mods/ndi_tracker/config
-plugins/lib/drivers
-plugins/lib/drivers
+
+# The Robot project compiles the Beckhoff driver and the small shared device
+# support layer directly. Keep those files visible, but do not expose the
+# retired Modbus/serial/GPIO/CML/arm driver bundle as protocol changes.
+plugins/lib/drivers/*
+!plugins/lib/drivers/dep/
+!plugins/lib/drivers/dep/include/
+plugins/lib/drivers/dep/include/*
+!plugins/lib/drivers/dep/include/interval_heap.hpp
+!plugins/lib/drivers/dep/include/priority_deque.hpp
+!plugins/lib/drivers/dep/include/robot_config.h
+!plugins/lib/drivers/dep/include/utils.h
+!plugins/lib/drivers/dep/src/
+plugins/lib/drivers/dep/src/*
+!plugins/lib/drivers/dep/src/utils.cpp
+!plugins/lib/drivers/src/
+plugins/lib/drivers/src/*
+!plugins/lib/drivers/src/Device.hpp
+!plugins/lib/drivers/src/beckhoff_driver.cpp
+!plugins/lib/drivers/src/beckhoff_driver.hpp
 
 cmake
 3rdparty

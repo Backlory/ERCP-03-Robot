@@ -12,16 +12,10 @@ namespace ercp {
         struct {
             PropertyReadOnly<int> Verbose = 1;
             PropertyReadOnly<std::string> Master = std::string("127.0.0.1"); //("192.168.1.100");
-            PropertyReadOnly<std::string> Cloud = std::string("192.168.1.100"); // 云端
+            PropertyReadOnly<std::string> Cloud = std::string("127.0.0.1");
         } Basic;
 
         struct {
-            struct {
-                PropertyReadOnly<bool> Base = false;
-                PropertyReadOnly<bool> Arm = true;
-                PropertyReadOnly<bool> Operator = true;
-                PropertyReadOnly<bool> Cannula = false;
-            } Module;
             struct {
                 PropertyReadOnly<std::string> Addr = std::string("127.0.0.1");
                 PropertyReadOnly<int> Port = 851;

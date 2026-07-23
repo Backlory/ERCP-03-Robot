@@ -35,9 +35,9 @@ namespace ercp {
         beckhoff_arm_move_state BeckhoffArmMoveState() const override;
         // 跟随数据
         bool BeckhoffFollowData(unsigned long length, void* data) const override;
+        std::uint32_t BeckhoffFollowDataResult(
+            unsigned long length, const void *data) const override;
         bool BeckhoffFollowData_Oneclick(double target, double bigAngle, double smlAngle) const override;
-        // 基座移动
-        bool BeckhoffBaseMove(unsigned long length, void *data) const override;
         bool BeckhoffArmOperation(beckhoff_arm_operation iArmOper)const override;
 
         //bool BeckhoffMotorMove(double data[13], int iType, int bIsUpdate)const override;
@@ -66,6 +66,7 @@ namespace ercp {
         double BeckhoffBigWhellCalc() const override;
 
         bool IsOpen() const override;
+        device::beckhoff::BeckhoffSnapshot BeckhoffSnapshot() const override;
 
         // ERCP
         bool BeckhoffERCPOperateState(bool state) const override;

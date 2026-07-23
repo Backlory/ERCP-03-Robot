@@ -161,12 +161,6 @@ namespace ercp {
             END_NS()
 
             BEGIN_NS("device")
-                BEGIN_SUB_NS("module")
-                    CONFIG(Device.Module.Base,     "use_base")
-                    CONFIG(Device.Module.Arm,      "use_arm")
-                    CONFIG(Device.Module.Operator, "use_operator")
-                    CONFIG(Device.Module.Cannula,  "use_cannula")
-                END_SUB_NS()
                 BEGIN_SUB_NS("beckhoff")
                     CONFIG(Device.Beckhoff.Addr,    "address")
                     CONFIG(Device.Beckhoff.Port,    "port")
@@ -242,24 +236,12 @@ void make_prop_info()
             .set_tag<types::_int>(std::string(""), std::array<int, 2>{ 0, 2 });
         basic.emplace("master", types::_string, std::string("192.168.1.100"))
             .set_comment(u8"主端IP。");
-        basic.emplace("cloud", types::_string, std::string("192.168.1.100"))
+        basic.emplace("cloud", types::_string, std::string("127.0.0.1"))
             .set_comment(u8"云端IP。");
     }
 
     {
         auto &device = prop_root.emplace_ns("device");
-        {
-            auto &module = device.emplace_ns("module");
-            module.emplace("use_base", types::_bool, false)
-                .set_comment(u8"是否启用基座模块。");
-            module.emplace("use_arm", types::_bool, true)
-                .set_comment(u8"是否启用机械臂模块。");
-            module.emplace("use_operator", types::_bool, true)
-                .set_comment(u8"是否启用操作器模块。");
-            module.emplace("use_cannula", types::_bool, false)
-                .set_comment(u8"是否启用插管模块。");
-
-        }
         {
             auto &beckhoff = device.emplace_ns("beckhoff");
             beckhoff.emplace("address", types::_string, std::string("127.0.0.1"))

@@ -149,13 +149,15 @@ namespace ercp {
         return beckhoff::Beckhoff_Motor::GetInstance().FollowOperationData(length, data);
     }
 
+    std::uint32_t _RobotDevice::BeckhoffFollowDataResult(
+        unsigned long length, const void *data) const
+    {
+        return beckhoff::Beckhoff_Motor::GetInstance().FollowOperationDataResult(length, data);
+    }
+
     bool _RobotDevice::BeckhoffFollowData_Oneclick(double target, double bigAngle, double smlAngle) const {
         return true;
         //beckhoff::Beckhoff_Motor::GetInstance().FollowOperationData_Oneclick(target, bigAngle, smlAngle);
-    }
-
-    bool _RobotDevice::BeckhoffBaseMove(unsigned long length, void* data) const {
-        return beckhoff::Beckhoff_Motor::GetInstance().BaseMoveData(length, data);
     }
 
     bool _RobotDevice::BeckhoffArmOperation(beckhoff_arm_operation iArmOper)const {
@@ -234,6 +236,11 @@ namespace ercp {
     bool _RobotDevice::IsOpen() const {
         return beckhoff::Beckhoff_Motor::GetInstance().IsOpen();
 
+    }
+
+    device::beckhoff::BeckhoffSnapshot _RobotDevice::BeckhoffSnapshot() const
+    {
+        return beckhoff::Beckhoff_Motor::GetInstance().Snapshot();
     }
 
     double _RobotDevice::BeckhoffLifter() const {

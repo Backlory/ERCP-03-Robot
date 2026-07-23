@@ -1,4 +1,5 @@
 ﻿#include <assert.h>
+#include <cmath>
 #include <vector>
 #include <boost/make_shared.hpp>
 #include "task.hpp"
@@ -17,9 +18,9 @@ namespace ercp {
 
     YunSBot::YunSBot()
         : base(*this)
-        , visual(*this)
-        , master(*this)
-        , situaware(*this)
+        , master(*this, protocol::v2::Source::Master, GetSettings().Basic.Master(),
+              31001, 31002, false)
+        , situaware(*this, protocol::v2::Source::Cloud, "127.0.0.1", 31003, 31004, true)
     {
         ROBOT_INFO(true, "Start lingcai robot !");
         base.StartThreads();
@@ -35,17 +36,32 @@ namespace ercp {
     ///////////////////////////////////////////////////////////////////////////
 
     YunSBot::_base::_base(YunSBot &p)
-        : parent(p)
+        : m_status_session_id(robot_udp_v2::MakeSessionId())
+        , parent(p)
     {
+        m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
         InitStartingTask();
         InitClosingTask();
         InitBackgroundTask();
 
-        BeforeRobotStarting.connect([&]() { m_RobotAutoMode = false; });
-        OnRobotStartSucceed.connect([&]() { StartControlThreads(); });
+        BeforeRobotStarting.connect([&]() {
+            m_RobotAutoMode = false;
+            m_active_source = 0;
+            m_command_fresh = false;
+            m_accepted_command_received_unix_ns = 0;
+            m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
+        });
+        OnRobotStartSucceed.connect([&]() {
+            m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
+            StartControlThreads();
+        });
         BeforeRobotStopping.connect([&]() {
             m_RobotAutoMode = false;
             ExitControlThreads();
+            m_active_source = 0;
+            m_command_fresh = false;
+            m_accepted_command_received_unix_ns = 0;
+            m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
         });
         OnRobotStopFailed.connect([&]() { StartControlThreads(); });
 
@@ -332,11 +348,8 @@ namespace ercp {
 
     bool YunSBot::_base::SwitchAutoMode(bool enable)
     {
-        bool b1 = IsRobotRunning();
-        bool b2 = parent.visual.IsVisionOnline();
-        /*std::cout << "b1:" << b1 << std::endl;
-        std::cout << "b2:" << b2 << std::endl;*/
-        if (enable && IsRobotRunning() && parent.visual.IsVisionOnline()) {
+        const bool autoSourceOnline = parent.situaware.IsOnline(0.1);
+        if (enable && IsRobotRunning() && autoSourceOnline) {
             m_RobotAutoMode = true;
         } else {
             m_RobotAutoMode = false;
@@ -386,56 +399,41 @@ namespace ercp {
 
     ///////////////////////////////////////////////////////////////////////////
 
-    task::paral_ptr<> BaseInitor()
-    {
-        auto seq = std::make_shared<ParallelTasks<>>(u8"基座");
-        return seq;
-    }
-
-    task::paral_ptr<> BaseDeInitor()
-    {
-        auto seq = std::make_shared<ParallelTasks<>>(u8"基座");
-        return seq;
-    }
-
     void YunSBot::_base::InitStartingTask()
     {
         InitTasks = std::make_shared<SequentialTasks<>>(u8"开机");
         using task = _TaskBase<>;
 
-        if (GetSettings().Device.Module.Arm()) {
-            InitTasks->emplace(
-                u8"启动机械臂模块",
-                []() {
-                    auto &arm = rpc::ArmModule::GetInstance();
-                    arm.Initialize();
-                    sleep_ms(200);
-                    rpc::ArmModule::state_t a = arm.get_current_state();
-                    return arm.get_current_state() >=rpc::ArmModule::state_t::A2_Inited;
-                },
-                false, 1);
+        InitTasks->emplace(
+            u8"启动机械臂模块",
+            []() {
+                auto &arm = rpc::ArmModule::GetInstance();
+                arm.Initialize();
+                sleep_ms(200);
+                return arm.get_current_state() >= rpc::ArmModule::state_t::A2_Inited;
+            },
+            false, 1);
 
-            InitTasks->emplace(
-                u8"更新机械臂状态",
-                []() {
-                    auto& arm = rpc::ArmModule::GetInstance();
-                    auto& robot = GetRobot();
+        InitTasks->emplace(
+            u8"更新机械臂状态",
+            []() {
+                auto &arm = rpc::ArmModule::GetInstance();
+                auto &robot = GetRobot();
 
-                    if (beckhoff_arm_move_state::BAMS_OPENED == robot.BeckhoffArmMoveState()) {
-                        // 展开完成状态
-                        return arm.GotoState(rpc::arm_state_t::A4_Opened);
-                    } else if (beckhoff_arm_move_state::BAMS_FOLDED == robot.BeckhoffArmMoveState()) {
-                        // 折叠完成状态
-                        return arm.GotoState(rpc::arm_state_t::A3_Folded);
-                    } else if (beckhoff_arm_move_state::BAMS_FOLLOWING
-                            == robot.BeckhoffArmMoveState()
-                        || beckhoff_arm_move_state::BAMS_FOLLOWED == robot.BeckhoffArmMoveState()) {
-                        return arm.GotoState(rpc::arm_state_t::A5_Following); // ← 添加这个
-                    }
-                    return true;
-                },
-                false, 1);
-        }
+                if (beckhoff_arm_move_state::BAMS_OPENED == robot.BeckhoffArmMoveState()) {
+                    return arm.GotoState(rpc::arm_state_t::A4_Opened);
+                } else if (beckhoff_arm_move_state::BAMS_FOLDED
+                    == robot.BeckhoffArmMoveState()) {
+                    return arm.GotoState(rpc::arm_state_t::A3_Folded);
+                } else if (beckhoff_arm_move_state::BAMS_FOLLOWING
+                        == robot.BeckhoffArmMoveState()
+                    || beckhoff_arm_move_state::BAMS_FOLLOWED
+                        == robot.BeckhoffArmMoveState()) {
+                    return arm.GotoState(rpc::arm_state_t::A5_Following);
+                }
+                return true;
+            },
+            false, 1);
 
         ROBOT_INFO(true, "Robot starting list:\n" << InitTasks->dump());
     }
@@ -448,15 +446,13 @@ namespace ercp {
         {
             auto paral = std::make_shared<ParallelTasks<>>(u8"关闭电机");
 
-            if (GetSettings().Device.Module.Arm()) {
-                DeinitTasks->emplace(
-                    u8"关闭机械臂模块",
-                    []() {
-                        auto &arm = rpc::ArmModule::GetInstance();
-                        return arm.DeInitialize();
-                    },
-                    true, 1);
-            }
+            DeinitTasks->emplace(
+                u8"关闭机械臂模块",
+                []() {
+                    auto &arm = rpc::ArmModule::GetInstance();
+                    return arm.DeInitialize();
+                },
+                true, 1);
 
             DeinitTasks->emplace(paral);
         }
@@ -464,74 +460,16 @@ namespace ercp {
         //ROBOT_INFO(true, "Robot closing list:\n" << DeinitTasks->dump());
     }
 
-    extern robot_status GetRobotStatus();
-    extern std::string GetRobotStatusStr(robot_status &rstate);
-
-
     void YunSBot::_base::InitBackgroundTask()
     {
         OnBackground.connect([this](double t) {
-            // 发送状态
             static double t0 = 0;
             if (t - t0 > 0.02) {
-                auto rstate = GetRobotStatus();
-
-                control_cmd cmd;
-                if (m_RobotAutoMode) {
-                    parent.visual.GetVisionCmd(cmd, 1.0);
-                } else {
-                    parent.master.GetMasterCmd(cmd, 0.1);
+                const auto packet = BuildStatusPacket();
+                if (!packet.empty()) {
+                    parent.master.SendStatus(packet);
+                    parent.situaware.SendStatus(packet);
                 }
-
-                //将检查ID与cmd,robot状态指令相绑定输出日志
-                loguru::g_stderr_verbosity = loguru::Verbosity_OFF;
-                std::string examine_id = "pig";
-                if ("" == examine_id) {
-                    ROBOT_INFO(true, fmt::format("Examine ID is empty"));
-                } else {
-                    // cmd
-                    ROBOT_INFO(true,
-                        fmt::format("Examine ID: {},\
-                            Bend_lr: {},\
-                            Bend_ud: {},\
-                            Move: {},\
-                            Rotate: {},\
-                            Cutter_move: {},\
-                            Cutter_bend: {},\
-                            Wire_feed: {},\
-                            Cutter_rotate: {},\
-                            X: {},\
-                            Y: {},\
-                            Z: {}",
-                            examine_id, cmd.vel_bend_lr, cmd.vel_bend_ud, cmd.vel_move,
-                            cmd.vel_rotate, cmd.cannula.vel_cutter_move,
-                            cmd.cannula.vel_cutter_bend, cmd.cannula.vel_wire_feed,
-                            cmd.cannula.vel_cutter_rotate, cmd.base.vel_x, cmd.base.vel_y,
-                            cmd.base.vel_r));
-                    // robot状态
-                    ROBOT_INFO(true, GetRobotStatusStr(rstate));
-                    loguru::g_stderr_verbosity = loguru::Verbosity_INFO;
-                }
-
-                // 指令反馈
-                int i = 0, const off = 10;
-                rstate._reserved[off + (i++)] = cmd.vel_bend_lr;
-                rstate._reserved[off + (i++)] = cmd.vel_bend_ud;
-                rstate._reserved[off + (i++)] = cmd.vel_move;
-                rstate._reserved[off + (i++)] = cmd.vel_rotate;
-                rstate._reserved[off + (i++)] = cmd.cannula.vel_cutter_move;
-                rstate._reserved[off + (i++)] = cmd.cannula.vel_cutter_bend;
-                rstate._reserved[off + (i++)] = cmd.cannula.vel_wire_feed;
-                rstate._reserved[off + (i++)] = cmd.cannula.vel_cutter_rotate;
-                rstate._reserved[off + (i++)] = cmd.base.vel_x;
-                rstate._reserved[off + (i++)] = cmd.base.vel_y;
-                rstate._reserved[off + (i++)] = cmd.base.vel_r;
-
-                // Serialize
-                static std::vector<char> buffer(sizeof(rstate));
-                std::copy((char *)&rstate, (char *)&rstate + buffer.size(), buffer.data());
-                parent.master.SendStatus(buffer);
-                parent.situaware.SendStatus(buffer);      // 情景感知发送流
                 t0 = t;
             }
         });
@@ -539,6 +477,118 @@ namespace ercp {
         // 主从控制线程
         OnControl.connect(
             boost::bind(&YunSBot::_base::ControlRunnable2, this, boost::placeholders::_1));
+    }
+
+    protocol::v2::AppliedCommandPayload YunSBot::_base::AppliedCommands() const
+    {
+        return m_applied_commands.Snapshot();
+    }
+
+    protocol::v2::Source YunSBot::_base::ActiveSource() const
+    {
+        return static_cast<protocol::v2::Source>(m_active_source.load());
+    }
+
+    std::uint64_t YunSBot::_base::AcceptedCommandReceivedUnixNs() const
+    {
+        return m_accepted_command_received_unix_ns.load();
+    }
+
+    std::uint64_t YunSBot::_base::LifecycleChangedUnixNs() const
+    {
+        return m_lifecycle_changed_unix_ns.load();
+    }
+
+    protocol::v2::Bytes YunSBot::_base::BuildStatusPacket()
+    {
+        const auto snapshot = GetRobot().BeckhoffSnapshot();
+        const auto now = robot_udp_v2::UnixNowNs();
+        protocol::v2::FullStatusPayload status;
+
+        if (IsRobotStopping()) status.runtime.lifecycle = protocol::v2::RobotLifecycle::Stopping;
+        else if (IsRobotStarting()) status.runtime.lifecycle = protocol::v2::RobotLifecycle::Starting;
+        else if (IsRobotRunning()) status.runtime.lifecycle = protocol::v2::RobotLifecycle::Running;
+        else status.runtime.lifecycle = protocol::v2::RobotLifecycle::Stopped;
+        status.runtime.mode = IsAutoMode()
+            ? protocol::v2::RobotMode::Automatic : protocol::v2::RobotMode::Manual;
+        status.runtime.active_source = ActiveSource();
+        status.runtime.flags = (snapshot.connection_state
+                    != device::beckhoff::SnapshotConnectionState::Disconnected ? 1u << 0 : 0u)
+            | (IsLogging() ? 1u << 1 : 0u)
+            | (m_command_fresh.load() ? 1u << 2 : 0u);
+        status.runtime.lifecycle_changed_unix_ns = LifecycleChangedUnixNs();
+        status.runtime.accepted_command_received_unix_ns = AcceptedCommandReceivedUnixNs();
+
+        status.beckhoff_common.move_state =
+            static_cast<protocol::v2::BeckhoffMoveState>(snapshot.move_state);
+        status.beckhoff_common.output_switches = snapshot.output_switches;
+        status.beckhoff_common.power_level = snapshot.power_level;
+        status.beckhoff_common.values = snapshot.common_values;
+        status.raw_io.encoders = snapshot.encoders;
+        status.raw_io.sensors = snapshot.sensors;
+        status.ercp_state.flags = snapshot.ercp_flags;
+        status.ercp_state.drive_errors = snapshot.ercp_drive_errors;
+        status.ercp_state.motor_errors = snapshot.ercp_motor_errors;
+        status.ercp_state.type = static_cast<protocol::v2::ErcpDeviceType>(snapshot.ercp_type);
+        status.ercp_state.move_status =
+            static_cast<protocol::v2::ErcpMoveState>(snapshot.ercp_move_status);
+        status.ercp_feedback.values = snapshot.ercp_feedback;
+        status.ercp_feedback.inject_state_01 =
+            static_cast<protocol::v2::InjectorState>(snapshot.inject_state_01);
+        status.ercp_feedback.inject_state_02 =
+            static_cast<protocol::v2::InjectorState>(snapshot.inject_state_02);
+        const auto applied_commands = AppliedCommands();
+        status.applied_command = applied_commands;
+
+        status.ads_diagnostics.snapshot_sequence = snapshot.sequence;
+        status.ads_diagnostics.poll_started_unix_ns = snapshot.poll_started_unix_ns;
+        status.ads_diagnostics.poll_completed_unix_ns = snapshot.poll_completed_unix_ns;
+        status.ads_diagnostics.snapshot_published_unix_ns = snapshot.published_unix_ns;
+        status.ads_diagnostics.connection_state
+            = static_cast<protocol::v2::AdsConnectionState>(snapshot.connection_state);
+        status.ads_diagnostics.valid_groups = snapshot.valid_groups;
+        status.ads_diagnostics.stale_groups = snapshot.stale_groups;
+        status.ads_diagnostics.consecutive_failed_polls = snapshot.consecutive_failed_polls;
+        status.ads_diagnostics.overall_ads_error = snapshot.overall_ads_error;
+        status.ads_diagnostics.common_ads_error = snapshot.common_ads_error;
+        status.ads_diagnostics.raw_io_ads_error = snapshot.raw_io_ads_error;
+        status.ads_diagnostics.ercp_state_ads_error = snapshot.ercp_state_ads_error;
+        status.ads_diagnostics.ercp_feedback_ads_error = snapshot.ercp_feedback_ads_error;
+        status.ads_diagnostics.command_write_ads_error
+            = applied_commands.latest_write_attempt.ads_error;
+
+        for (double &value : status.beckhoff_common.values) {
+            if (!std::isfinite(value)) {
+                value = 0;
+                status.ads_diagnostics.stale_groups |= device::beckhoff::SnapshotCommon;
+            }
+        }
+        for (double &value : status.ercp_feedback.values) {
+            if (!std::isfinite(value)) {
+                value = 0;
+                status.ads_diagnostics.stale_groups |= device::beckhoff::SnapshotErcpFeedback;
+            }
+        }
+
+        status.sampled_at_unix_ns = { now, snapshot.sampled_at_unix_ns[0],
+            snapshot.sampled_at_unix_ns[1], snapshot.sampled_at_unix_ns[2],
+            snapshot.sampled_at_unix_ns[3], now, snapshot.published_unix_ns, now };
+
+        protocol::v2::Header header;
+        header.message_type = protocol::v2::MessageType::RobotStatus;
+        header.source = protocol::v2::Source::Robot;
+        header.session_id = m_status_session_id;
+        header.sequence = m_status_sequence++;
+        header.sent_at_unix_ns = now;
+
+        protocol::v2::Bytes packet;
+        std::string error;
+        if (!protocol::v2::encodeFullStatus(header, status, packet, &error)) {
+            ROBOT_ERROR(GetSettings().Basic.Verbose() > 0,
+                fmt::format("Robot V2 status encode failed: {}", error))
+            packet.clear();
+        }
+        return packet;
     }
 
 } // namespace ercp

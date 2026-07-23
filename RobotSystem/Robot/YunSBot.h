@@ -10,6 +10,7 @@ using UdpServer = Poco::Net::UDPServer;
 
 #include "utils.h"
 #include "robot_config.h"
+#include "robot_udp_v2_runtime.hpp"
 #include "yunsbot_config.h"
 
 namespace task {
@@ -19,12 +20,6 @@ namespace task {
     template <typename... Args>
     class _TasksBase;
 } // namespace task
-
-namespace net::udp {
-    template <typename Src, typename Pkt>
-    struct udp_reader;
-    using cmd_client = udp_reader<control_cmd, control_cmd>;
-} // namespace net::udp
 
 namespace ercp {
 
@@ -55,9 +50,6 @@ namespace ercp {
             bool IsRobotStarting() const;
             bool IsRobotStopping() const;
             bool IsLogging() const;
-
-            // 判断是否可以切换状态
-            bool IsChangeModel();
 
             bool SwitchAutoMode(bool enable);
             bool SwitchLogger(bool enable);
@@ -129,99 +121,67 @@ namespace ercp {
             std::shared_ptr<ilsr::Logger> m_logger;
             std::shared_ptr<ilsr::Logger> m_FRecord; // 测试记录力反馈电压值
 
+            robot_udp_v2::AppliedCommandTracker m_applied_commands;
+            std::atomic<std::uint16_t> m_active_source{0};
+            std::atomic<bool> m_command_fresh{false};
+            std::atomic<std::uint64_t> m_accepted_command_received_unix_ns{0};
+            std::atomic<std::uint64_t> m_lifecycle_changed_unix_ns{0};
+            const std::uint64_t m_status_session_id;
+            std::uint64_t m_status_sequence = 0;
+
             void StartControlThreads();
             void ExitControlThreads();
 //            void ControlRunnable(double t);
             void ControlRunnable2(double t);
 
-            void build_follow_cmd(const control_cmd& cmd, beckhoff_follow_cmd& follow_cmd);
+            void build_follow_cmd(
+                const protocol::v2::ControlPayload &cmd, beckhoff_follow_cmd &follow_cmd);
+
+            protocol::v2::AppliedCommandPayload AppliedCommands() const;
+            protocol::v2::Source ActiveSource() const;
+            std::uint64_t AcceptedCommandReceivedUnixNs() const;
+            std::uint64_t LifecycleChangedUnixNs() const;
+            protocol::v2::Bytes BuildStatusPacket();
 
 
             YunSBot &parent;
         } base;
 
         /// <summary>
-        /// 视觉接口
+        /// Master and Cloud V2 control/status channels.
         /// </summary>
-        struct _visual {
+        struct _control_channel : public Poco::Net::UDPHandler {
 
             friend class YunSBot;
 
         public:
-            bool IsVisionOnline() const;
-            bool GetVisionCmd(control_cmd &cmd, double overtime = 0.1) const;
+            bool IsOnline(double overtime = 0.1) const;
+            bool GetCommand(protocol::v2::ControlPayload &cmd,
+                robot_udp_v2::CommandMetadata &metadata, double overtime = 0.1) const;
+            bool LatestCommand(protocol::v2::ControlPayload &cmd,
+                robot_udp_v2::CommandMetadata &metadata) const;
+            robot_udp_v2::ReceiveStats Stats() const;
+            int SendStatus(const protocol::v2::Bytes &data);
 
         protected:
-            _visual(YunSBot &p);
-            _visual(const _visual &) = delete;
+            _control_channel(YunSBot &p, protocol::v2::Source source,
+                std::string remote_address, std::uint16_t status_port,
+                std::uint16_t control_port, bool loopback_only);
+            _control_channel(const _control_channel &) = delete;
 
         private:
-            std::shared_ptr<net::udp::cmd_client> m_client;
-
             YunSBot &parent;
-        } visual;
+            const protocol::v2::Source source;
+            robot_udp_v2::CommandReceiver receiver;
 
-        /// <summary>
-        /// 主控控制接口
-        /// </summary>
-        struct _master : public Poco::Net::UDPHandler {
-
-            friend class YunSBot;
-
-        public:
-            void InitMasterSlaveControl();
-            bool IsMasterOnline() const;
-
-            bool GetMasterCmd(control_cmd &cmd, double overtime = 0.1) const;
-            int SendStatus(const std::vector<char> &data);
-
-        protected:
-            _master(YunSBot &p);
-            _master(const _master &) = delete;
-
-        private:
-            ilsr::mutex_data<control_cmd> m_cmd;
-            YunSBot &parent;
-
-        private:
             UdpClient client;
             std::shared_ptr<UdpServer> server;
             Poco::Net::UDPHandler::List handlers;
+            std::chrono::steady_clock::time_point last_stats_log_{};
 
             void processData(char *buf) override;
             void processError(char *buf) override;
-        } master;
-
-        /// <summary>
-        /// 情景感知接口
-        /// </summary>
-        struct _situaware : public Poco::Net::UDPHandler {
-
-            friend class YunSBot;
-
-        public:
-            void InitMasterSlaveControl();
-            bool IsMasterOnline() const;
-
-            bool GetMasterCmd(control_cmd &cmd, double overtime = 0.1) const;
-            int SendStatus(const std::vector<char> &data);
-
-        protected:
-            _situaware(YunSBot &p);
-            _situaware(const _situaware &) = delete;
-
-        private:
-            ilsr::mutex_data<control_cmd> m_cmd;
-            YunSBot &parent;
-
-        private:
-            UdpClient client;
-            std::shared_ptr<UdpServer> server;
-            Poco::Net::UDPHandler::List handlers;
-
-            void processData(char *buf) override;
-            void processError(char *buf) override;
-        } situaware;
+        } master, situaware;
 
         /// <summary>
         /// 机器人全局上下文

@@ -33,6 +33,12 @@
     <ClInclude Include="RPC\ArmModule.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
+    <ClInclude Include="..\include\include\robot_udp_v2_runtime.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\include\protocol\robot_udp_v2.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">
@@ -50,13 +56,10 @@
     <ClCompile Include="Robot\YunSBot.Base.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Robot\YunSBot.Ms.Local.cpp">
+    <ClCompile Include="Robot\YunSBot.ControlChannel.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
-    <ClCompile Include="Robot\YunSBot.Visual.Local.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="Robot\YunSBot.SituAware.Local.cpp">
+    <ClCompile Include="Robot\YunSBot.UdpV2.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="RPC\ArmModule.cpp">

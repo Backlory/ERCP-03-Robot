@@ -21,6 +21,9 @@
     <ClCompile Include="..\..\lib\drivers\src\beckhoff_driver.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\..\..\include\include\beckhoff_snapshot.hpp">
+      <Filter>devices</Filter>
+    </ClInclude>
     <ClInclude Include="..\..\lib\drivers\src\Device.hpp">
       <Filter>devices</Filter>
     </ClInclude>

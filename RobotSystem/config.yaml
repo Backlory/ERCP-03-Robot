@@ -1,13 +1,8 @@
 basic:
   verbose: 1
   master: 192.168.1.109       # 机器人控制主端ip
-  cloud: 192.168.1.100		 # 数据端IP
+  cloud: 127.0.0.1            # Robot与Cloud同机，固定loopback
 device:
-  module:
-    use_base: true
-    use_arm: true
-    use_operator: true
-    use_cannula: true
   beckhoff:
     address: 169.254.143.160.1.1  # 2-3-3
     port: 851

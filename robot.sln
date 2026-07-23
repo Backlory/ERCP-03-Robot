@@ -8,6 +8,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "library", "plugins\lib\libr
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "robot_device", "plugins\robot\robot_device\robot_device.vcxproj", "{DF82B80E-15E6-4B4D-B936-60AC59C58500}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RobotUdpV2Regression", "tests\RobotUdpV2Regression\RobotUdpV2Regression.vcxproj", "{2A5B8454-C5F1-4A65-A33E-7B331993A389}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -26,6 +28,8 @@ Global
 		{DF82B80E-15E6-4B4D-B936-60AC59C58500}.Debug|x64.Build.0 = Debug|x64
 		{DF82B80E-15E6-4B4D-B936-60AC59C58500}.Release|x64.ActiveCfg = Release|x64
 		{DF82B80E-15E6-4B4D-B936-60AC59C58500}.Release|x64.Build.0 = Release|x64
+		{2A5B8454-C5F1-4A65-A33E-7B331993A389}.Debug|x64.ActiveCfg = Debug|x64
+		{2A5B8454-C5F1-4A65-A33E-7B331993A389}.Release|x64.ActiveCfg = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
