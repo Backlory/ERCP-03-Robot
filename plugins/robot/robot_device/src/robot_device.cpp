@@ -36,30 +36,6 @@ namespace ercp {
         InitDevices(GetSettings().Basic.Verbose());
     }
 
-    void _RobotDevice::CreateExtraLogger(std::string name)
-    {
-        if (name.empty()) {
-            name = fmt::format("{:.06f}.log", ilsr::Time::logtime());
-        }
-        auto log = std::make_shared<ilsr::Logger>(name, GetLogPath());
-        std::lock_guard<decltype(m_logger_mutex)> lock(m_logger_mutex);
-        m_extra_logger.swap(log);
-    }
-
-    std::shared_ptr<ilsr::Logger> _RobotDevice::GetExtraLogger()
-    {
-        std::lock_guard<decltype(m_logger_mutex)> lock(m_logger_mutex);
-        return m_extra_logger;
-    }
-
-    void _RobotDevice::ReleaseExtraLogger()
-    {
-        std::lock_guard<decltype(m_logger_mutex)> lock(m_logger_mutex);
-        m_extra_logger.reset();
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-
     void _RobotDevice::InitDevices(int verbose)
     {
         auto &settings = GetSettings();
@@ -82,9 +58,7 @@ namespace ercp {
         }
     }
 
-    _RobotDevice::~_RobotDevice()
-    {
-    }
+    _RobotDevice::~_RobotDevice() = default;
 
     ///////////////////////////////////////////////////////////////////////////
 
@@ -127,16 +101,6 @@ namespace ercp {
         return beckhoff::Beckhoff_Motor::GetInstance().Force(2);
     }
 
-    //bool _RobotDevice::BeckhoffRead() const {
-    //    INT32 data[5];
-    //    bool bIsRe = beckhoff::Beckhoff_Motor::GetInstance().Encoder(data);
-    //    return true;// beckhoff::Beckhoff_Motor::GetInstance().ReadData();
-    //}
-
-    //bool _RobotDevice::BeckhoffWrite() const {
-    //    return true;// beckhoff::Beckhoff_Motor::GetInstance().WriteData();
-    //}
-
     bool _RobotDevice::BeckhoffMoveArmTo(bool bIsOpen) const {
         return beckhoff::Beckhoff_Motor::GetInstance().MoveArmTo(bIsOpen);
     }
@@ -145,88 +109,18 @@ namespace ercp {
         return beckhoff::Beckhoff_Motor::GetInstance().MoveState();;
     }
 
-    bool _RobotDevice::BeckhoffFollowData(unsigned long length, void* data) const {
-        return beckhoff::Beckhoff_Motor::GetInstance().FollowOperationData(length, data);
-    }
-
     std::uint32_t _RobotDevice::BeckhoffFollowDataResult(
         unsigned long length, const void *data) const
     {
         return beckhoff::Beckhoff_Motor::GetInstance().FollowOperationDataResult(length, data);
     }
 
-    bool _RobotDevice::BeckhoffFollowData_Oneclick(double target, double bigAngle, double smlAngle) const {
-        return true;
-        //beckhoff::Beckhoff_Motor::GetInstance().FollowOperationData_Oneclick(target, bigAngle, smlAngle);
-    }
-
     bool _RobotDevice::BeckhoffArmOperation(beckhoff_arm_operation iArmOper)const {
         return beckhoff::Beckhoff_Motor::GetInstance().ArmOperation(iArmOper);
     }
 
-    //bool _RobotDevice::BeckhoffMotorMove(double data[13], int iType, int bIsUpdate) const {
-    //    return beckhoff::Beckhoff_Motor::GetInstance().MotorMove(data, iType, bIsUpdate);
-    //}
-
-    bool _RobotDevice::BeckhoffLinearActuator(INT16 data[2])const {
-        return beckhoff::Beckhoff_Motor::GetInstance().LinearActuator(data);
-    }
-
-    //bool _RobotDevice::BeckhoffMotorPara(int iReadPos, double& dActPos, double& dActVel, int& iActCurrent)const {
-    //    return beckhoff::Beckhoff_Motor::GetInstance().MotorPara(iReadPos, dActPos, dActVel, iActCurrent);
-    //}
-
-    //bool _RobotDevice::BeckhoffMotorPara2(double dActPos[13], double dActVel[13], int iActCurrent[13])const {
-    //    return beckhoff::Beckhoff_Motor::GetInstance().MotorPara2(dActPos, dActVel, iActCurrent);
-    //}
-
-    ////2-3-2
-    //bool _RobotDevice::BeckhoffReadAsexPos(double asex_pos[21]) const
-    //{
-    //    return beckhoff::Beckhoff_Motor::GetInstance().ReadAsexPos(asex_pos);
-    //}
-
-    //2-3-3
     bool _RobotDevice::BeckhoffReadAsexPos(double asex_pos[19])const {
         return beckhoff::Beckhoff_Motor::GetInstance().ReadAsexPos(asex_pos);
-    }
-
-    bool _RobotDevice::BeckhoffEncoder(INT32 data[5])const {
-        return beckhoff::Beckhoff_Motor::GetInstance().Encoder(data);
-    }
-    bool _RobotDevice::BeckhoffSensor(INT16 data[7])const {
-        return beckhoff::Beckhoff_Motor::GetInstance().Sensor(data);
-    }
-
-    double _RobotDevice::BeckhoffFollowLength(void) const {
-        return beckhoff::Beckhoff_Motor::GetInstance().Follow_Length();
-    }
-
-    double _RobotDevice::BeckhoffSmallWhell(void) const {
-        return beckhoff::Beckhoff_Motor::GetInstance().SmallWhell();
-
-    }
-
-    double _RobotDevice::BeckhoffBigWhell(void) const {
-        return beckhoff::Beckhoff_Motor::GetInstance().BigWhell();
-    }
-
-    double _RobotDevice::BeckhoffSmallWhellCalc(void) const {
-        return beckhoff::Beckhoff_Motor::GetInstance().SmallWhellCalc();
-
-    }
-
-    double _RobotDevice::BeckhoffBigWhellCalc(void) const {
-        return beckhoff::Beckhoff_Motor::GetInstance().BigWhellCalc();
-    }
-
-
-    double _RobotDevice::BeckhoffRotateDegree(void) const {
-        return beckhoff::Beckhoff_Motor::GetInstance().RotateDegree();
-    }
-
-    bool _RobotDevice::Beckhoff_Switch(gpio_output_t out_switch) const {
-        return beckhoff::Beckhoff_Motor::GetInstance().Output_Switch(out_switch);
     }
 
     double _RobotDevice::BeckhoffForce(INT16 iPos) const {
@@ -243,10 +137,6 @@ namespace ercp {
         return beckhoff::Beckhoff_Motor::GetInstance().Snapshot();
     }
 
-    double _RobotDevice::BeckhoffLifter() const {
-        return beckhoff::Beckhoff_Motor::GetInstance().Lifter();
-    }
-
     // ERCP
     bool _RobotDevice::BeckhoffERCPOperateState(bool state) const
     {
@@ -260,14 +150,4 @@ namespace ercp {
         return beckhoff::Beckhoff_Motor::GetInstance().IsERCPReady();
     }
 
-    double _RobotDevice::BeckhoffGetERCPDeliverForce() const {
-        return beckhoff::Beckhoff_Motor::GetInstance().GetERCPDeliverForce();
-    }
-    double _RobotDevice::BeckhoffGetERCPGuidwireForce() const {
-        return beckhoff::Beckhoff_Motor::GetInstance().GetERCPGuidwireForce();
-    }
-    double _RobotDevice::BeckhoffGetERCPDeliverPos() const
-    {
-        return beckhoff::Beckhoff_Motor::GetInstance().GetERCPDeliverPos();
-    }
 } // namespace ercp

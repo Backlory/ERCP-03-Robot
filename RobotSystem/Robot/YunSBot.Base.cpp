@@ -28,13 +28,6 @@ namespace ercp {
         rpc::ArmModule::GetInstance().Resume<rpc::ArmModule>();
     }
 
-    YunSBot::_context::_context()
-        : cannula_bowing_pos(2000.0)
-    {
-    }
-
-    ///////////////////////////////////////////////////////////////////////////
-
     YunSBot::_base::_base(YunSBot &p)
         : m_status_session_id(robot_udp_v2::MakeSessionId())
         , parent(p)
@@ -55,15 +48,44 @@ namespace ercp {
             m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
             StartControlThreads();
         });
+        OnRobotStartFailed.connect([&]() {
+            m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
+        });
         BeforeRobotStopping.connect([&]() {
+            const bool automaticMode = m_RobotAutoMode.load();
+            const auto selectedSource = robot_udp_v2::SelectedControlSource(automaticMode);
             m_RobotAutoMode = false;
             ExitControlThreads();
+
+            // The control loop is gone, so explicitly make the final PLC write a safety zero.
+            // This uses the unchanged Beckhoff native 10-double + 6-BOOL command layout.
+            protocol::v2::ControlPayload ignored;
+            robot_udp_v2::CommandMetadata metadata;
+            auto &channel = automaticMode ? parent.situaware : parent.master;
+            if (!channel.LatestCommand(ignored, metadata)) {
+                metadata.source = selectedSource;
+            }
+            const auto zero = robot_udp_v2::ZeroControl();
+            beckhoff_follow_cmd followCommand;
+            build_follow_cmd(zero, followCommand);
+            const auto appliedAt = robot_udp_v2::UnixNowNs();
+            const auto adsError
+                = GetRobot().BeckhoffFollowDataResult(sizeof(followCommand), &followCommand);
+            const bool succeeded = adsError == 0;
+            m_applied_commands.MarkAttempt(zero, metadata,
+                succeeded ? protocol::v2::ApplyResult::TimedOutToZero
+                          : protocol::v2::ApplyResult::Failed,
+                adsError, appliedAt, succeeded);
+
             m_active_source = 0;
             m_command_fresh = false;
             m_accepted_command_received_unix_ns = 0;
             m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
         });
         OnRobotStopFailed.connect([&]() { StartControlThreads(); });
+        OnRobotStopEnd.connect([&]() {
+            m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
+        });
 
         work = boost::make_shared<boost::asio::io_service::work>(this->io_service);
     }
@@ -166,9 +188,6 @@ namespace ercp {
 
             ROBOT_INFO(true, "Robot starting ...")
             m_RobotStarting = true;
-
-            // test
-            OnRobotStartSucceed();
 
             if (m_init_report.size() == 0) {
                 InitTasks->report(m_init_report);

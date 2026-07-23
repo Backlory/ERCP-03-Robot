@@ -55,11 +55,6 @@ namespace server {
         double force_record() {
             double dForceValue = GetRobot().BeckhoffForce(5);
 
-            ////2-3-2
-            //double asex_Pos[21];
-            //GetRobot().BeckhoffReadAsexPos(asex_Pos);
-
-            //2-3-3
             double asex_Pos[19];
             GetRobot().BeckhoffReadAsexPos(asex_Pos);
 
@@ -371,11 +366,6 @@ namespace server {
         bool stop_arm() { return true; }
 
         bool is_arm_inited() { return true; }
-
-        bool follow_one_click(double targets, double bigAngle, double smlAngle) { 
-            return GetRobot().BeckhoffFollowData_Oneclick(targets, bigAngle, smlAngle);
-        }
-
 
     } // namespace manuplator
 

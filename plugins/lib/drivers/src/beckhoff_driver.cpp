@@ -139,39 +139,12 @@ namespace device { namespace beckhoff {
         return nErr == ADSERR_NOERR;
     }
 
-    // Motor的移�?
-    //bool Beckhoff_Motor::MotorMove(double data[13], int iType, int bIsUpdate)
-    //{
-    //    MotorData d;
-    //    // memcpy(d.MoveAngle, data, 13);
-    //    for (int i = 0; i < 13; i++) {
-    //        d.MoveAngle[i] = data[i];
-    //    }
-    //    d.ICtrlState = iType;
-    //    d.IsUpdate = bIsUpdate;
-
-    //    return WriteData((char *)"MAIN.Control_MotorMove", sizeof(d), &d);
-    //}
-
     // 设置水气
     bool Beckhoff_Motor::LinearActuator(INT16 data[2])
     {
         return WriteData("MAIN.ILA_Node3", 4, data) == ADSERR_NOERR;
     }
 
-    // 读取电机的位�?速度，电流等
-    //bool Beckhoff_Motor::MotorPara(int iReadPos, double &dActPos, double &dActVel, int &iActCurrent)
-    //{
-    //    MotorParaData mpData[13];
-    //    if (!ReadData((char *)"MAIN.MotorPara", sizeof(mpData), mpData))
-    //        return false;
-
-    //    dActPos = mpData[iReadPos].ActPos;
-    //    dActVel = mpData[iReadPos].ActVel;
-    //    iActCurrent = mpData[iReadPos].ActCurrent;
-
-    //    return true;
-    //}
     // 写入
     bool Beckhoff_Motor::MoveArmTo(bool bIsOpen)
     {
@@ -197,19 +170,6 @@ namespace device { namespace beckhoff {
         return result;
     }
 
-    bool Beckhoff_Motor::FollowOperationData_Oneclick(double target, double bigAngle, double smlAngle, bool bSendState)
-    {
-        // 发送一键跟随状�?
-        double pos[] = { target, bigAngle, smlAngle };
-
-        bool bIsRe = WriteData("MAIN.FollowOper_Oneclick", sizeof(pos), pos) == ADSERR_NOERR;
-        
-        if (!bSendState)
-            return bIsRe;
-        else 
-            return ArmOperation(BAO_FOLLOW_ONE);
-    }
-
     // ��������
     bool Beckhoff_Motor::BaseMoveData(unsigned long length, void *data)
     {
@@ -230,8 +190,7 @@ namespace device { namespace beckhoff {
             // 非急停为恢�?原有的运动状态恢复为初始状�?
             const auto moveState = MoveState();
             if (beckhoff_arm_move_state::BAMS_FOLDING == moveState ||
-                beckhoff_arm_move_state::BAMS_OPENING == moveState ||
-                beckhoff_arm_move_state::BAMS_FOLLOWING_ONE == moveState) {
+                beckhoff_arm_move_state::BAMS_OPENING == moveState) {
                 if ( !ArmOperation(beckhoff_arm_operation::BAO_NONE) ) return false;
             }
         }
@@ -255,11 +214,6 @@ namespace device { namespace beckhoff {
 
     double Beckhoff_Motor::Follow_Length() { return Snapshot().common_values[0]; }
 
-    ////2-3-2
-    //double Beckhoff_Motor::SmallWhell() { return m_Data_Feedback.Asex_Pos[14]; } // Asex_Pos[14]; }
-    //double Beckhoff_Motor::BigWhell() { return m_Data_Feedback.Asex_Pos[15]; } // Asex_Pos[15]; }
-    
-    // 2-3-3
     double Beckhoff_Motor::SmallWhell() { return Snapshot().common_values[17 + 16]; }
     double Beckhoff_Motor::BigWhell() { return Snapshot().common_values[17 + 17]; }
 
@@ -298,29 +252,6 @@ namespace device { namespace beckhoff {
         return Snapshot().common_values[13];
     }
 
-    //bool Beckhoff_Motor::MotorPara2(double dActPos[13], double dActVel[13], int iActCurrent[13])
-    //{
-    //    // MotorParaData mpData[13];
-    //    // if (!ReadData((char*)"MAIN.MotorPara", sizeof(mpData), mpData)) return false;
-
-    //    for (int i = 0; i < 13; i++) {
-    //        dActPos[i] = m_Data_MotorPara[i].ActPos;
-    //        dActVel[i] = m_Data_MotorPara[i].ActVel;
-    //        iActCurrent[i] = m_Data_MotorPara[i].ActCurrent;
-    //    }
-
-    //    return true;
-    //}
-
-    ////2-3-2
-    //bool Beckhoff_Motor::ReadAsexPos(double dAsex_Pos[21]) {
-    //    for (int i = 0; i < 21; i++) {
-    //        dAsex_Pos[i] = m_Data_Feedback.Asex_Pos[i];
-    //    }
-    //    return true;
-    //}
-
-    //2-3-3
     bool Beckhoff_Motor::ReadAsexPos(double dAsex_Pos[19])
     {
         const auto snapshot = Snapshot();

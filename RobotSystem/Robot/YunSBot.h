@@ -183,56 +183,6 @@ namespace ercp {
             void processError(char *buf) override;
         } master, situaware;
 
-        /// <summary>
-        /// 机器人全局上下文
-        /// </summary>
-        struct _context {
-
-            friend class YunSBot;
-
-            Eigen::Vector3d following_old_target = Eigen::Vector3d::Zero();
-
-            std::atomic<double> following_complement_master = { 0.0 };  //按键补偿
-            std::atomic<double> following_complement_autofollow = { 0.0 };    //输送轮
-            std::atomic<double> following_complement_force = { 0.0 };  //力控补偿
-
-            std::atomic<bool> following_autofollow_enable = { false };
-            std::atomic<double> following_autofollow_target = { 0.0 };
-
-            std::atomic<double> cannula_bowing_pos;
-
-            std::atomic<bool> base_enabled = { false };
-            std::atomic<double> base_timer = { -1.0 };
-
-            std::atomic<double> force_fb = { 0.0 };
-            std::atomic<double> force_target_max = { 10.0 };
-            std::atomic<double> force_target_min = { -10.0 };
-            std::atomic<double> out_limit_max = { 1.0 };
-            std::atomic<double> out_limit_min = { -1.0 };
-            std::atomic<double> Kp = { 0.5 };
-            std::atomic<double> Ki = { 0.2 };
-            std::atomic<double> Kd = { 0.3 };
-            std::atomic<double> erro = { 0.0 };
-            std::atomic<double> erro_last = { 0.0 };
-            std::atomic<double> erro_last_last = { 0.0 };
-            std::atomic<double> pid_out = { 0.0 };
-
-            std::atomic<bool> test_[9] = { false };
-
-            std::atomic<double> init_pos_[9] = { 0.0 };
-
-            std::atomic<double> tar_pos_[9] = { 0.0 };
-
-            std::atomic<double> pas_enc_ofs = { 0.0 };
-
-        
-            std::atomic<double> fold_tar_pos_[3] = { 0.0 };
-            std::atomic<double> open_tar_pos[13] = {30, 139.3304,122.9004,91.9986,0,41.9833, 138.6022, 113.0016, -37.8703,-73.2925,0,0,0 };
-            std::atomic<double> fold_tar_pos[13] = {30, 195.3304,6.9004,  146.9986,0,41.9833, 200.4861, 14.9878,  -6.2073,-73.2925, 0,0,0 };
-        protected:
-            _context();
-        } context;
-
     protected:
         YunSBot();
         YunSBot(const YunSBot &) = delete;

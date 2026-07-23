@@ -33,63 +33,6 @@ namespace device { namespace beckhoff {
             return bf;
         }
 
-        struct MotorData {
-            double MoveAngle[13];
-            INT16 ICtrlState;
-            INT16 IsUpdate;
-        };
-        struct MotorParaData {
-            double ActPos;
-            double ActVel;
-            int ActCurrent;
-        };
-        //2-2
-        //struct FeedbackData {
-        //    double  Follow_Length;      // 介入长度
-        //    bool    Switch_Water;       // 水 状态
-        //    bool    Switch_Gas;         // 气 状态
-        //    bool    Switch_Suck;        // 吸引 状态
-
-        //    double  Asex_Pos[17];       // 21个轴的信息
-
-        //    double Big_Whell;           // 大拨轮 0-1
-        //    double Small_Whell;         // 小拨轮 0-1
-
-        //    //double Force_Sensor[10];    // 力反馈信息
-        //    //INT16  Power_level;         // 电池信息
-
-        //    //double lifter;              // 抬钳器0-1;
-
-        //    //double Deliver_force;       // 输送力
-
-        //    //double Rotate_Deqree;       // 旋转角度
-        //};
-        
-        //2-3-2
-        //struct FeedbackData {
-        //    double Follow_Length; // 介入长度
-        //    bool Switch_Water; // 水 状态
-        //    bool Switch_Gas; // 气 状态
-        //    bool Switch_Suck; // 吸引 状态
-
-        //    double Big_Whell; // 大拨轮 0-1
-        //    double Small_Whell; // 小拨轮 0-1
-
-        //    double Force_Sensor[10]; // 力反馈信息
-        //    INT16 Power_level; // 电池信息
-
-        //    double lifter; // 抬钳器0-1;
-
-        //    double Deliver_force; // 输送力
-
-        //    double Rotate_Deqree; // 旋转角度
-
-        //    double Follow_Force; //跟随力/N
-
-        //    double Asex_Pos[21]; // 21个轴的信息
-        //};
-
-        // 2-3-3
         struct FeedbackData {
             double Follow_Length; // 介入长度
             bool Switch_Water; // 水 状态
@@ -146,13 +89,6 @@ namespace device { namespace beckhoff {
         BeckhoffSnapshot Snapshot() const;
 
         // 获取信息
-        //bool MotorPara(int iReadPos, double &dActPos, double &dActVel, int &iActCurrent);
-        //bool MotorPara2(double dActPos[13], double dActVel[13], int iActCurrent[13]);
-        
-        ////2-3-2
-        //bool ReadAsexPos(double dAsex_Pos[21]);
-
-        // 2-3-3
         bool ReadAsexPos(double dAsex_Pos[19]);
 
         bool Encoder(INT32 data[5]);
@@ -178,12 +114,10 @@ namespace device { namespace beckhoff {
         int BatteryInfo();
 
         // 写入信息
-        //bool MotorMove(double data[13], int iType, int bIsUpdate);
         bool LinearActuator(INT16 data[2]);
         bool MoveArmTo(bool bIsOpen);
         bool FollowOperationData(unsigned long length, void *data);
         std::uint32_t FollowOperationDataResult(unsigned long length, const void *data);
-        bool FollowOperationData_Oneclick(double target, double bigAngle, double smlAngle, bool bSendState);
         bool BaseMoveData(unsigned long length, void *data);
         bool ArmOperation(beckhoff_arm_operation iOpration);
 
@@ -227,48 +161,6 @@ namespace device { namespace beckhoff {
         // 倍福地址
         AmsAddr m_Addr;
 
-        // 电机绝对值编码器 Axis5,Axis6,Axis11,Axis12,Axis13
-        INT32 m_Data_Encoder[5];
-        // 力传感器采集的电压
-        INT16 m_Data_Sensor[7];
-
-        // 13个电机的数据
-        //MotorParaData m_Data_MotorPara[13];
-
-        // 展开折叠状态
-        beckhoff_arm_move_state m_Data_MoveState;
-
-        // 反馈数据
-        FeedbackData m_Data_Feedback;
-
-        // ERCP在线（十二指肠下的台车） true： 在线
-        bool m_bERCP_Online;
-
-        // ERCP就绪
-        bool m_bERCP_Ready;
-
-        //驱动器报错（ERCP台车存在驱动器报错） true：存在异常
-        bool m_bErro_State_Drive_ERCP;
-        //驱动器报错状态列表
-        bool m_DriveErrorState_ERCP[14];
-
-        //电机报错（ERCP台车存在驱动器报错） true：存在异常
-        bool m_bErro_State_Motor_ERCP;
-        //电机报错状态列表
-        bool m_MotorErrorState_ERCP[12];
-
-        // ERCP类型 0：默认切割刀 1：取石网篮 2：球囊 3：引流管
-        int m_ERCP_Type;
-
-        // ERCP状态反馈   10：折叠中 11：折叠完成  20：展开中  21：展开完成  30：跟随中 31：跟随完成
-        // 40：装载中  41：装在完成  50：交换中  51：交换完成
-        int m_ERCP_MoveStatus;
-
-        // ERCP器械装载、交换方向 true:正向
-        bool m_bERCP_Load_Exchange_Dir;
-
-        // ERCP反馈数据
-        ERCPFeedbackData m_ERCP_FeedBack_Data;
     };
 
 }} // namespace device::beckhoff

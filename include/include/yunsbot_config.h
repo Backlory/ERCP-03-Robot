@@ -37,17 +37,14 @@ enum beckhoff_arm_move_state : uint32_t {
     BAMS_OPENING = 20,				// 展开中
     BAMS_OPENED = 21,				// 展开完成
     BAMS_FOLLOWING = 30,			// 跟随中
-    BAMS_FOLLOWED = 31,				// 跟谁完成
-    BAMS_FOLLOWING_ONE = 40,		// 一键跟随中
-    BAMS_FOLLOWED_ONE = 41,			// 一键跟谁完成
+    BAMS_FOLLOWED = 31,				// 跟随完成
 };
 
 enum beckhoff_arm_operation : uint32_t {
     BAO_NONE = 0,
     BAO_FOLD = 1,
     BAO_OPEN = 2,
-    BAO_FOLLOW = 3,
-    BAO_FOLLOW_ONE = 4
+    BAO_FOLLOW = 3
 };
 
 
@@ -85,29 +82,5 @@ struct beckhoff_follow_cmd {
     bool switch_water = false;
     bool switch_gas = false;
     bool switch_suct = false;
-}; // Robot 2-3-1
-
-//struct beckhoff_follow_cmd {
-//
-//    double follow_comp_botton = 0;
-//
-//    double vel_move = 0;
-//    double vel_rotate = 0;
-//    double vel_pincer = 0;
-//    double vel_bend_lr = 0;
-//    double vel_bend_ud = 0;
-//
-//    double vel_cutter_rot = 0;
-//    double vel_cutter_bend = 0;
-//    double vel_wire_feed = 0;
-//    double vel_cutter_feed = 0;
-//
-//    bool home_rotate = false;
-//    bool home_bend_lr = false;
-//    bool home_bend_ud = false;
-//
-//    bool switch_water = false;
-//    bool switch_gas = false;
-//    bool switch_suct = false;
-//}; // Robot 2-2
+};
 

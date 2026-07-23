@@ -397,18 +397,6 @@ public:
     }
 };
 
-class arm_followoneclick : public basic_request {
-    Json handler(const Json& json) override
-    {
-        double targets = json.get("pos").extract<double>();
-        double bigAngle = json.get("bigAngle").extract<double>();
-        double smlAngle = json.get("smlAngle").extract<double>();
-        Json d;
-        d.set("status", manuplator::follow_one_click(targets, bigAngle, smlAngle));//manuplator::init_arm());
-        return d;
-    }
-};
-
 class arm_init : public basic_request {
 public:
     Json handler(const Json &json) override
@@ -607,7 +595,6 @@ Handler::Handler()
         vt{
             { "status", std::make_shared<arm_status>() }, //
             { "moverel", std::make_shared<arm_moverel>() }, //
-            { "followoneclick", std::make_shared<arm_followoneclick>() },
             { "init", std::make_shared<arm_init>() }, //
             { "stop", std::make_shared<arm_stop>() } //
         });

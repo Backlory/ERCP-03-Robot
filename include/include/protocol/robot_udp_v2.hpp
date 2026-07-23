@@ -101,8 +101,6 @@ enum class BeckhoffMoveState : std::uint32_t {
     Opened = 21,
     Following = 30,
     Followed = 31,
-    OneClickFollowing = 40,
-    OneClickFollowed = 41,
 };
 
 enum class ErcpDeviceType : std::int32_t {

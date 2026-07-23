@@ -94,8 +94,6 @@ namespace server {
         bool stop_arm();
         bool is_arm_inited();
 
-        bool follow_one_click(double targets, double bigAngle, double smlAngle);
-
     } // namespace manuplator
 
     namespace beckhoffator {

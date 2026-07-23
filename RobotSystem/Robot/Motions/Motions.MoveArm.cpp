@@ -9,8 +9,7 @@ namespace ercp {
 
         if (beckhoff_arm_move_state::BAMS_OPENED != robot.BeckhoffArmMoveState()
             && beckhoff_arm_move_state::BAMS_FOLLOWED != robot.BeckhoffArmMoveState()
-            && beckhoff_arm_move_state::BAMS_FOLLOWING != robot.BeckhoffArmMoveState()
-            && beckhoff_arm_move_state::BAMS_FOLLOWED_ONE != robot.BeckhoffArmMoveState()) {
+            && beckhoff_arm_move_state::BAMS_FOLLOWING != robot.BeckhoffArmMoveState()) {
             return false;
         }
 
