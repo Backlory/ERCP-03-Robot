@@ -1,8 +1,8 @@
 basic:
   verbose: 1
-  master: 127.0.0.1       # 机器人控制主端ip
+  master: 192.168.1.109       # 机器人控制主端ip
   cloud: 127.0.0.1            # Robot与Cloud同机，固定loopback
 device:
   beckhoff:
-    address: 127.0.0.1.1.1  # simulator
+    address: 169.254.143.160.1.1  # 2-3-3
     port: 851
