@@ -13,6 +13,14 @@ namespace ercp {
             PropertyReadOnly<int> Verbose = 1;
             PropertyReadOnly<std::string> Master = std::string("127.0.0.1"); //("192.168.1.100");
             PropertyReadOnly<std::string> Cloud = std::string("127.0.0.1");
+            // 7998 HTTP 控制面监听网卡地址。默认 0.0.0.0 保持现有全网卡可达性,
+            // 可收窄到指定内网网卡。空或 0.0.0.0 时按原全网卡行为绑定。
+            PropertyReadOnly<std::string> Bind = std::string("0.0.0.0");
+            // 7998 CORS 允许来源。默认空 = 不输出 Access-Control-Allow-Origin 头
+            // (Master 用 .NET WebRequest 非浏览器,CORS 对其无影响)。
+            PropertyReadOnly<std::string> CorsOrigin = std::string("");
+            // Master 强制优先仲裁开关(见 ControlRunnable2)。默认启用。
+            PropertyReadOnly<bool> MasterPriority = true;
         } Basic;
 
         struct {

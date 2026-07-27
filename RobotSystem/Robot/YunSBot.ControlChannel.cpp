@@ -23,6 +23,13 @@ YunSBot::_control_channel::_control_channel(YunSBot &p, protocol::v2::Source cha
     ROBOT_INFO(GetSettings().Basic.Verbose() > 0,
         fmt::format("Robot V2 status target {}", statusAddress.toString()))
 
+    // M4: 31002 (non-loopback) only accepts datagrams from the configured peer
+    // (basic.master); 31004 stays loopback-bound and needs no source filter.
+    // Deployment precondition: the Master's actual egress IP must match the
+    // configured address (NAT or other source rewriting is unsupported).
+    filter_peer_ = !loopback_only;
+    expected_peer_ = statusAddress.host();
+
     const Poco::Net::SocketAddress controlAddress(
         loopback_only ? "127.0.0.1" : "0.0.0.0", control_port);
     handlers.push_back(this);
@@ -34,6 +41,23 @@ YunSBot::_control_channel::_control_channel(YunSBot &p, protocol::v2::Source cha
 
 void YunSBot::_control_channel::processData(char *buf)
 {
+    // M4: drop datagrams whose source IP differs from the configured peer
+    // (see constructor comment); counted as rejected in receiver stats.
+    if (filter_peer_) {
+        const auto sender = Poco::Net::UDPHandler::address(buf);
+        if (sender.host() != expected_peer_) {
+            receiver.RecordRejected();
+            const auto dropNow = std::chrono::steady_clock::now();
+            if (dropNow - last_peer_drop_log_ >= std::chrono::seconds(10)) {
+                ROBOT_ERROR(GetSettings().Basic.Verbose() > 0, fmt::format(
+                    "Robot V2 control datagram dropped: unexpected peer {} (expected {})",
+                    sender.toString(), expected_peer_.toString()))
+                last_peer_drop_log_ = dropNow;
+            }
+            return;
+        }
+    }
+
     const auto size = static_cast<std::size_t>(payloadSize(buf));
     const auto *bytes = reinterpret_cast<const std::uint8_t *>(payload(buf));
 

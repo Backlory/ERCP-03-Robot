@@ -102,12 +102,22 @@ namespace ercp {
 
             seq->emplace(u8"等待", [this, verbose, bIsOpen]() {
                 auto &robot = ercp::GetRobot();
+                // L1: 等待 PLC 到位加 30s 上限,超时返回失败(经 M1 机制上提为
+                // 信封 status:false),不再无限死循环阻塞 HTTP 工作线程。
+                const auto deadline
+                    = boost::chrono::steady_clock::now() + boost::chrono::seconds(30);
                 while (true) {
                     boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
                     int iState = robot.BeckhoffArmMoveState();
                     if ((bIsOpen && beckhoff_arm_move_state::BAMS_OPENED == iState)
                         || (!bIsOpen && beckhoff_arm_move_state::BAMS_FOLDED == iState)) {
                         break;
+                    }
+                    if (boost::chrono::steady_clock::now() >= deadline) {
+                        ROBOT_ERROR(true,
+                            fmt::format("Beckhoff arm move to `{}` timed out after 30s.",
+                                bIsOpen ? "open" : "fold"))
+                        return false;
                     }
                 }
                 return true;

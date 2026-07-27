@@ -152,7 +152,8 @@ public:
             auto action = json.get("action").extract<std::string>();
             auto m = robot::get_module_actions();
             if (std::find(m.begin(), m.end(), action) == m.end()) {
-                return "Action has invalid `type`.";
+                // L3: 该分支校验的是 `action` 字段,文案不再误写为 `type`
+                return "Action has invalid `action`.";
             }
         }
         return "";
@@ -163,7 +164,13 @@ public:
         Json d;
         auto type = json.get("type").extract<std::string>();
         auto action = json.get("action").extract<std::string>();
-        d.set("status", robot::do_module_action(type, action));
+        const bool ok = robot::do_module_action(type, action);
+        d.set("status", ok);
+        if (!ok) {
+            // M1: 业务失败上提为信封 status=false(见 server.cpp handleRequest)
+            d.set(kBusinessFailInfoKey,
+                fmt::format("Module action `{}` on `{}` failed.", action, type));
+        }
         return d;
     }
 };
@@ -192,6 +199,10 @@ public:
             ret = robot::skip();
         }
         d.set("status", ret);
+        if (!ret) {
+            // M1: 业务失败上提为信封 status=false(见 server.cpp handleRequest)
+            d.set(kBusinessFailInfoKey, fmt::format("Robot `{}` failed.", action));
+        }
         return d;
     }
 

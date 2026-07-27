@@ -1,5 +1,7 @@
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
+#include <fstream>
 #include <iostream>
 #include <limits>
 #include <string>
@@ -292,16 +294,315 @@ void TestControlSourceSelection()
         "automatic mode selects the Cloud 31004 command source");
 }
 
+// ===================== shared-wire 黄金字节测试 =====================
+// 固定输入约定与 shared-wire/golden_gen/golden_gen.cpp 逐字面一致(fix_plan.md §3.5)。
+
+std::uint64_t PU(std::size_t offset) { return offset % 251; }
+double PF(std::size_t offset) { return static_cast<double>(offset % 251) + 0.5; }
+
+// 读取 golden hex fixture(大写连续十六进制文本, 忽略空白)。
+// 依次探测: ERCP_GOLDEN_DIR 环境变量、若干相对候选路径(测试目录 golden 副本)。
+protocol::Bytes LoadGoldenHex(const std::string &name, std::string &usedPath)
+{
+    std::vector<std::string> candidates;
+#ifdef _MSC_VER
+    char *envDir = nullptr;
+    std::size_t envLen = 0;
+    if (_dupenv_s(&envDir, &envLen, "ERCP_GOLDEN_DIR") == 0 && envDir != nullptr) {
+        candidates.push_back(std::string(envDir) + "/" + name);
+        std::free(envDir);
+    }
+#else
+    if (const char *dir = std::getenv("ERCP_GOLDEN_DIR")) {
+        candidates.push_back(std::string(dir) + "/" + name);
+    }
+#endif
+    std::string prefix;
+    for (int depth = 0; depth < 7; ++depth) {
+        candidates.push_back(prefix + "golden/" + name);
+        candidates.push_back(prefix + "tests/RobotUdpV2Regression/golden/" + name);
+        candidates.push_back(prefix + "03-Robot/tests/RobotUdpV2Regression/golden/" + name);
+        prefix += "../";
+    }
+    for (const auto &candidate : candidates) {
+        std::ifstream file(candidate, std::ios::binary);
+        if (!file) continue;
+        protocol::Bytes bytes;
+        int hi = -1;
+        char c = 0;
+        while (file.get(c)) {
+            int digit = -1;
+            if (c >= '0' && c <= '9') digit = c - '0';
+            else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+            else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+            else continue;
+            if (hi < 0) { hi = digit; }
+            else { bytes.push_back(static_cast<std::uint8_t>((hi << 4) | digit)); hi = -1; }
+        }
+        usedPath = candidate;
+        return bytes;
+    }
+    usedPath.clear();
+    return {};
+}
+
+protocol::Header GoldenControlHeader()
+{
+    protocol::Header header;
+    header.message_type = protocol::MessageType::RobotControl;
+    header.source = protocol::Source::Master;
+    header.session_id = 0x1122334455667788ull;
+    header.sequence = 42;
+    header.sent_at_unix_ns = 0x0102030405060708ull;
+    return header;
+}
+
+protocol::ControlPayload GoldenControlPayload()
+{
+    protocol::ControlPayload payload;
+    for (std::size_t i = 0; i < payload.values.size(); ++i) {
+        payload.values[i] = static_cast<double>(i) + 0.5;
+    }
+    payload.switches = 0x002A;
+    return payload;
+}
+
+protocol::Header GoldenStatusHeader()
+{
+    protocol::Header header;
+    header.message_type = protocol::MessageType::RobotStatus;
+    header.source = protocol::Source::Robot;
+    header.session_id = 0x1122334455667788ull;
+    header.sequence = 42;
+    header.sent_at_unix_ns = 0x0102030405060708ull;
+    return header;
+}
+
+protocol::FullStatusPayload GoldenStatusPayload()
+{
+    protocol::FullStatusPayload s;
+    s.runtime.lifecycle = protocol::RobotLifecycle::Running;
+    s.runtime.mode = protocol::RobotMode::Automatic;
+    s.runtime.active_source = protocol::Source::Master;
+    s.runtime.flags = 0x00000005;
+    s.runtime.lifecycle_changed_unix_ns = PU(80);
+    s.runtime.accepted_command_received_unix_ns = PU(88);
+    s.beckhoff_common.move_state = protocol::BeckhoffMoveState::Following;
+    s.beckhoff_common.output_switches = 0x0005;
+    s.beckhoff_common.power_level = static_cast<std::int16_t>(PU(118));
+    for (std::size_t j = 0; j < 36; ++j) s.beckhoff_common.values[j] = PF(120 + 8 * j);
+    for (std::size_t j = 0; j < 5; ++j) {
+        s.raw_io.encoders[j] = static_cast<std::int32_t>(PU(424 + 4 * j));
+    }
+    for (std::size_t j = 0; j < 7; ++j) {
+        s.raw_io.sensors[j] = static_cast<std::int16_t>(PU(444 + 2 * j));
+    }
+    s.ercp_state.flags = 0x0003;
+    s.ercp_state.drive_errors = static_cast<std::uint16_t>(PU(484));
+    s.ercp_state.motor_errors = static_cast<std::uint16_t>(PU(486));
+    s.ercp_state.type = protocol::ErcpDeviceType::Basket;
+    s.ercp_state.move_status = protocol::ErcpMoveState::Opened;
+    for (std::size_t j = 0; j < 12; ++j) s.ercp_feedback.values[j] = PF(520 + 8 * j);
+    s.ercp_feedback.inject_state_01 = protocol::InjectorState::Injecting;
+    s.ercp_feedback.inject_state_02 = protocol::InjectorState::Completed;
+    auto &r0 = s.applied_command.latest_write_attempt;
+    for (std::size_t j = 0; j < 10; ++j) r0.command.values[j] = PF(640 + 8 * j);
+    r0.command.switches = 0x002A;
+    r0.source = protocol::Source::Master;
+    r0.result = protocol::ApplyResult::Succeeded;
+    r0.command_session_id = PU(728);
+    r0.command_sequence = PU(736);
+    r0.received_unix_ns = PU(744);
+    r0.applied_unix_ns = PU(752);
+    r0.ads_error = static_cast<std::uint32_t>(PU(760));
+    auto &r1 = s.applied_command.last_successful_write;
+    for (std::size_t j = 0; j < 10; ++j) r1.command.values[j] = PF(768 + 8 * j);
+    r1.command.switches = 0x0015;
+    r1.source = protocol::Source::Cloud;
+    r1.result = protocol::ApplyResult::TimedOutToZero;
+    r1.command_session_id = PU(856);
+    r1.command_sequence = PU(864);
+    r1.received_unix_ns = PU(872);
+    r1.applied_unix_ns = PU(880);
+    r1.ads_error = static_cast<std::uint32_t>(PU(888));
+    s.ads_diagnostics.snapshot_sequence = PU(912);
+    s.ads_diagnostics.poll_started_unix_ns = PU(920);
+    s.ads_diagnostics.poll_completed_unix_ns = PU(928);
+    s.ads_diagnostics.snapshot_published_unix_ns = PU(936);
+    s.ads_diagnostics.connection_state = protocol::AdsConnectionState::Running;
+    s.ads_diagnostics.valid_groups = 0x0F;
+    s.ads_diagnostics.stale_groups = 0x03;
+    s.ads_diagnostics.consecutive_failed_polls = static_cast<std::uint32_t>(PU(948));
+    s.ads_diagnostics.overall_ads_error = static_cast<std::uint32_t>(PU(952));
+    s.ads_diagnostics.common_ads_error = static_cast<std::uint32_t>(PU(956));
+    s.ads_diagnostics.raw_io_ads_error = static_cast<std::uint32_t>(PU(960));
+    s.ads_diagnostics.ercp_state_ads_error = static_cast<std::uint32_t>(PU(964));
+    s.ads_diagnostics.ercp_feedback_ads_error = static_cast<std::uint32_t>(PU(968));
+    s.ads_diagnostics.command_write_ads_error = static_cast<std::uint32_t>(PU(972));
+    s.sampled_at_unix_ns = { PU(64), PU(104), PU(416), PU(472),
+                             PU(512), PU(632), PU(904), PU(984) };
+    return s;
+}
+
+void ExpectBytesEqual(const protocol::Bytes &actual, const protocol::Bytes &golden,
+    const char *what)
+{
+    if (actual.size() != golden.size()) {
+        ++failures;
+        std::cerr << "FAIL: " << what << " size " << actual.size()
+                  << " != golden " << golden.size() << '\n';
+        return;
+    }
+    for (std::size_t i = 0; i < actual.size(); ++i) {
+        if (actual[i] != golden[i]) {
+            ++failures;
+            std::cerr << "FAIL: " << what << " first byte mismatch at offset " << i
+                      << " (actual 0x" << std::hex << int(actual[i])
+                      << " golden 0x" << int(golden[i]) << std::dec << ")\n";
+            return;
+        }
+    }
+}
+
+void TestGoldenControlFixture()
+{
+    std::string path;
+    const auto golden = LoadGoldenHex("robot_control_152.hex", path);
+    Expect(!golden.empty(), "robot_control_152.hex fixture found");
+    if (golden.empty()) return;
+    std::cout << "golden control fixture: " << path << '\n';
+    Expect(golden.size() == 152, "control golden is 152 bytes");
+
+    protocol::Bytes encoded;
+    std::string error;
+    Expect(protocol::encodeControl(GoldenControlHeader(), GoldenControlPayload(), encoded, &error),
+        "golden control input encodes");
+    ExpectBytesEqual(encoded, golden, "encode(control fixture) == golden hex");
+
+    protocol::Header header;
+    protocol::ControlPayload payload;
+    Expect(protocol::decodeControl(golden.data(), golden.size(), header, payload, &error),
+        "golden control hex decodes");
+    Expect(header.session_id == 0x1122334455667788ull && header.sequence == 42
+            && header.sent_at_unix_ns == 0x0102030405060708ull
+            && header.source == protocol::Source::Master,
+        "golden control header fields match the fixed input");
+    bool valuesMatch = payload.switches == 0x002A;
+    for (std::size_t i = 0; i < payload.values.size(); ++i) {
+        valuesMatch = valuesMatch && payload.values[i] == static_cast<double>(i) + 0.5;
+    }
+    Expect(valuesMatch, "golden control payload fields match the fixed input");
+}
+
+void TestGoldenStatusFixture()
+{
+    std::string path;
+    const auto golden = LoadGoldenHex("robot_status_1024.hex", path);
+    Expect(!golden.empty(), "robot_status_1024.hex fixture found");
+    if (golden.empty()) return;
+    std::cout << "golden status fixture: " << path << '\n';
+    Expect(golden.size() == 1024, "status golden is 1024 bytes");
+
+    const auto fixture = GoldenStatusPayload();
+    protocol::Bytes encoded;
+    std::string error;
+    Expect(protocol::encodeFullStatus(GoldenStatusHeader(), fixture, encoded, &error),
+        "golden status input encodes");
+    ExpectBytesEqual(encoded, golden, "encode(status fixture) == golden hex");
+
+    protocol::Header header;
+    protocol::FullStatusPayload decoded;
+    Expect(protocol::decodeFullStatus(golden.data(), golden.size(), header, decoded, &error),
+        "golden status hex decodes");
+    Expect(header.session_id == 0x1122334455667788ull && header.sequence == 42
+            && header.sent_at_unix_ns == 0x0102030405060708ull
+            && header.source == protocol::Source::Robot,
+        "golden status header fields match the fixed input");
+    Expect(decoded.runtime.lifecycle == fixture.runtime.lifecycle
+            && decoded.runtime.mode == fixture.runtime.mode
+            && decoded.runtime.active_source == fixture.runtime.active_source
+            && decoded.runtime.flags == fixture.runtime.flags
+            && decoded.runtime.lifecycle_changed_unix_ns
+                == fixture.runtime.lifecycle_changed_unix_ns
+            && decoded.runtime.accepted_command_received_unix_ns
+                == fixture.runtime.accepted_command_received_unix_ns,
+        "golden status runtime group matches the fixed input");
+    Expect(decoded.beckhoff_common.move_state == fixture.beckhoff_common.move_state
+            && decoded.beckhoff_common.output_switches == fixture.beckhoff_common.output_switches
+            && decoded.beckhoff_common.power_level == fixture.beckhoff_common.power_level
+            && decoded.beckhoff_common.values == fixture.beckhoff_common.values,
+        "golden status Beckhoff group matches the fixed input");
+    Expect(decoded.raw_io.encoders == fixture.raw_io.encoders
+            && decoded.raw_io.sensors == fixture.raw_io.sensors,
+        "golden status raw IO group matches the fixed input");
+    Expect(decoded.ercp_state.flags == fixture.ercp_state.flags
+            && decoded.ercp_state.drive_errors == fixture.ercp_state.drive_errors
+            && decoded.ercp_state.motor_errors == fixture.ercp_state.motor_errors
+            && decoded.ercp_state.type == fixture.ercp_state.type
+            && decoded.ercp_state.move_status == fixture.ercp_state.move_status,
+        "golden status ERCP state group matches the fixed input");
+    Expect(decoded.ercp_feedback.values == fixture.ercp_feedback.values
+            && decoded.ercp_feedback.inject_state_01 == fixture.ercp_feedback.inject_state_01
+            && decoded.ercp_feedback.inject_state_02 == fixture.ercp_feedback.inject_state_02,
+        "golden status ERCP feedback group matches the fixed input");
+    const auto recordEqual = [](const protocol::AppliedCommandRecord &a,
+        const protocol::AppliedCommandRecord &b) {
+        return a.command.values == b.command.values && a.command.switches == b.command.switches
+            && a.source == b.source && a.result == b.result
+            && a.command_session_id == b.command_session_id
+            && a.command_sequence == b.command_sequence
+            && a.received_unix_ns == b.received_unix_ns
+            && a.applied_unix_ns == b.applied_unix_ns && a.ads_error == b.ads_error;
+    };
+    Expect(recordEqual(decoded.applied_command.latest_write_attempt,
+               fixture.applied_command.latest_write_attempt)
+            && recordEqual(decoded.applied_command.last_successful_write,
+                fixture.applied_command.last_successful_write),
+        "golden status applied command group matches the fixed input");
+    Expect(decoded.ads_diagnostics.snapshot_sequence == fixture.ads_diagnostics.snapshot_sequence
+            && decoded.ads_diagnostics.poll_started_unix_ns
+                == fixture.ads_diagnostics.poll_started_unix_ns
+            && decoded.ads_diagnostics.poll_completed_unix_ns
+                == fixture.ads_diagnostics.poll_completed_unix_ns
+            && decoded.ads_diagnostics.snapshot_published_unix_ns
+                == fixture.ads_diagnostics.snapshot_published_unix_ns
+            && decoded.ads_diagnostics.connection_state
+                == fixture.ads_diagnostics.connection_state
+            && decoded.ads_diagnostics.valid_groups == fixture.ads_diagnostics.valid_groups
+            && decoded.ads_diagnostics.stale_groups == fixture.ads_diagnostics.stale_groups
+            && decoded.ads_diagnostics.consecutive_failed_polls
+                == fixture.ads_diagnostics.consecutive_failed_polls
+            && decoded.ads_diagnostics.overall_ads_error
+                == fixture.ads_diagnostics.overall_ads_error
+            && decoded.ads_diagnostics.common_ads_error
+                == fixture.ads_diagnostics.common_ads_error
+            && decoded.ads_diagnostics.raw_io_ads_error
+                == fixture.ads_diagnostics.raw_io_ads_error
+            && decoded.ads_diagnostics.ercp_state_ads_error
+                == fixture.ads_diagnostics.ercp_state_ads_error
+            && decoded.ads_diagnostics.ercp_feedback_ads_error
+                == fixture.ads_diagnostics.ercp_feedback_ads_error
+            && decoded.ads_diagnostics.command_write_ads_error
+                == fixture.ads_diagnostics.command_write_ads_error,
+        "golden status ADS diagnostics group matches the fixed input");
+    Expect(decoded.sampled_at_unix_ns == fixture.sampled_at_unix_ns,
+        "golden status sampled_at timestamps match the fixed input");
+}
+
 } // namespace
 
 int main()
 {
+    std::cout << "kRobotUdpV2SyncVersion = " << protocol::kRobotUdpV2SyncVersion << '\n';
+
     TestCodec();
     TestFullStatus();
     TestSequenceAndSessions();
     TestV2OnlyAndFreshness();
     TestAppliedCommandTracking();
     TestControlSourceSelection();
+    TestGoldenControlFixture();
+    TestGoldenStatusFixture();
 
     if (failures != 0) {
         std::cerr << failures << " Robot UDP V2 regression test(s) failed\n";

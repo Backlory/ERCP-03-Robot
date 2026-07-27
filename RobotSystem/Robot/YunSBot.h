@@ -5,6 +5,7 @@
 #include <Eigen/Dense>
 #include <Poco/Net/UDPServer.h>
 #include <Poco/Net/DatagramSocket.h>
+#include <Poco/Net/IPAddress.h>
 using UdpClient = Poco::Net::DatagramSocket;
 using UdpServer = Poco::Net::UDPServer;
 
@@ -122,12 +123,17 @@ namespace ercp {
             std::shared_ptr<ilsr::Logger> m_FRecord; // 测试记录力反馈电压值
 
             robot_udp_v2::AppliedCommandTracker m_applied_commands;
+            // Task 11: Master 强制优先仲裁开关(默认启用,构造时从 basic.master_priority 读)
+            // 与 Cloud 命令因仲裁被丢弃的累计计数(联调统计)。
+            std::atomic<bool> m_master_priority{true};
+            std::atomic<std::uint64_t> m_master_priority_overrides{0};
             std::atomic<std::uint16_t> m_active_source{0};
             std::atomic<bool> m_command_fresh{false};
             std::atomic<std::uint64_t> m_accepted_command_received_unix_ns{0};
             std::atomic<std::uint64_t> m_lifecycle_changed_unix_ns{0};
             const std::uint64_t m_status_session_id;
             std::uint64_t m_status_sequence = 0;
+            std::uint64_t m_last_sent_common_sample_unix_ns = 0;
 
             void StartControlThreads();
             void ExitControlThreads();
@@ -178,6 +184,14 @@ namespace ercp {
             std::shared_ptr<UdpServer> server;
             Poco::Net::UDPHandler::List handlers;
             std::chrono::steady_clock::time_point last_stats_log_{};
+
+            // M4: non-loopback channels only accept datagrams whose source IP
+            // matches the configured remote peer (basic.master). Deployment
+            // precondition: the Master's actual egress IP must equal the
+            // configured address (NAT or other rewriting setups unsupported).
+            bool filter_peer_ = false;
+            Poco::Net::IPAddress expected_peer_;
+            std::chrono::steady_clock::time_point last_peer_drop_log_{};
 
             void processData(char *buf) override;
             void processError(char *buf) override;

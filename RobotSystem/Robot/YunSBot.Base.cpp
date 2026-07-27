@@ -33,6 +33,8 @@ namespace ercp {
         , parent(p)
     {
         m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
+        // Task 11: Master 强制优先仲裁开关,默认从配置读(basic.master_priority,默认 true)。
+        m_master_priority = GetSettings().Basic.MasterPriority();
         InitStartingTask();
         InitClosingTask();
         InitBackgroundTask();
@@ -521,6 +523,16 @@ namespace ercp {
     protocol::v2::Bytes YunSBot::_base::BuildStatusPacket()
     {
         const auto snapshot = GetRobot().BeckhoffSnapshot();
+        const auto common_sample_unix_ns = snapshot.sampled_at_unix_ns[0];
+        const bool has_fresh_common_sample
+            = (snapshot.valid_groups & device::beckhoff::SnapshotCommon) != 0
+            && (snapshot.stale_groups & device::beckhoff::SnapshotCommon) == 0
+            && common_sample_unix_ns != 0;
+        if (!has_fresh_common_sample
+            || common_sample_unix_ns == m_last_sent_common_sample_unix_ns) {
+            return {};
+        }
+
         const auto now = robot_udp_v2::UnixNowNs();
         protocol::v2::FullStatusPayload status;
 
@@ -606,6 +618,8 @@ namespace ercp {
             ROBOT_ERROR(GetSettings().Basic.Verbose() > 0,
                 fmt::format("Robot V2 status encode failed: {}", error))
             packet.clear();
+        } else {
+            m_last_sent_common_sample_unix_ns = common_sample_unix_ns;
         }
         return packet;
     }

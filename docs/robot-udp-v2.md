@@ -80,6 +80,49 @@ NaN 和正负 Inf 均拒绝。V2.0 暂不在 codec 中猜测量程，Robot 在�
 `switches` bit：0 home rotate；1 home bend LR；2 home bend UD；3 water；4 gas；5 suction。
 bit 6..15 必须为 0。
 
+### 4.1 控制量量程（Robot 侧 clamp）
+
+Robot 在来源仲裁后、写入 PLC 前对 10 路连续控制量逐路 clamp 到下表区间（超界取边界值，
+不拒包；NaN/Inf 已在 codec 层拒绝）。实现位置：`RobotSystem/Robot/Motions/Motions.Cycles.cpp`
+的 `build_follow_cmd`，常量必须与本表保持一致。
+
+当前所有生产发送端（Master 手柄映射：轴归一化输出 ±1，按键映射 ±1）输出均为归一化
+速度比，因此 V2.0 统一采用 [-1.0, +1.0]。**本表为占位量程**：PLC 工程单位与每路物理
+量程待 TwinCAT 权威 schema 与设备安全策略确认后收紧，不能从 C++ 类型或历史 UI 猜测
+（与第 2 节约束一致）。
+
+| 字段 | 单位 | [lo, hi] |
+|---|---|---|
+| `follow_compensation` | 归一化速度比 | [-1.0, +1.0] |
+| `scope_move` | 归一化速度比 | [-1.0, +1.0] |
+| `scope_rotate` | 归一化速度比 | [-1.0, +1.0] |
+| `scope_bend_lr` | 归一化速度比 | [-1.0, +1.0] |
+| `scope_bend_ud` | 归一化速度比 | [-1.0, +1.0] |
+| `pincer` | 归一化速度比 | [-1.0, +1.0] |
+| `cutter_feed` | 归一化速度比 | [-1.0, +1.0] |
+| `cutter_rotate` | 归一化速度比 | [-1.0, +1.0] |
+| `cutter_bend` | 归一化速度比 | [-1.0, +1.0] |
+| `guide_wire_feed` | 归一化速度比 | [-1.0, +1.0] |
+
+`switches` 不做 clamp，未知 bit 仍按第 6 节整包拒绝。
+
+### 4.2 命令流节奏契约（发送端保活 / Robot 过期归零）
+
+- 发送端（Master→31002 / Cloud→31004）处于"正在控制"状态时，Control 包最小发送频率
+  必须 ≥ 20Hz（包间隔 ≤ 50ms）。控制输入租约仍有效时按上一有效命令原值保活重发；
+  保活重发包同样使用递增的 `sequence` 与新的 `sent_at_unix_ns`，不得原字节重放。
+- Cloud `robot_command` 的网络保活不等于上游控制授权：距最后一次真实矩阵输入超过
+  200ms 后，保活内容切换为全零命令；保活包自身不得续期该输入租约。新的合法矩阵输入
+  到达后恢复正常命令。这样上游管线卡死时不会永久重放最后一条非零运动命令。
+- Robot 侧新鲜度看门狗：距最近一个被接受的命令超过 100ms（monotonic clock，见第 8 节）
+  即视为过期，向 PLC 写全零命令，并在状态包 G6 中上报 `ApplyResult::TimedOutToZero`，
+  直到下一个合法命令到达。
+- 推论：发送端满足本契约时，正常运行不应观察到周期性 `TimedOutToZero`；出现即说明
+  发送端节奏或链路异常。发送端在停止控制（会话结束/模块 Stop）时直接停发即可，
+  由 100ms 过期归零机制完成安全兜底。
+- 实现锚点：Cloud `nodes/robot_command/main.cpp` 的 50ms 保活定时器；Robot
+  `RobotSystem/Robot/Motions/Motions.Cycles.cpp` 的 `GetCommand(..., 0.1)` 过期归零。
+
 ## 5. RobotStatus 容器
 
 Status payload 先放 8 字节目录，然后顺序放置 length-delimited groups。
@@ -106,10 +149,14 @@ V2.0 全量状态按 ID 1..8 顺序编码。业务 payload 总计 840 字节，8
 |---:|---|---|
 | 0 | `uint8 enum` | lifecycle：Unknown=0, Stopped=1, Starting=2, Running=3, Stopping=4, Fault=5 |
 | 1 | `uint8 enum` | mode：Unknown=0, Manual=1, Automatic=2 |
-| 2 | `uint16 enum` | active control source；None=0 或公共头 Source |
-| 4 | `uint32 bitmask` | bit0 Beckhoff connected；1 logging；2 command fresh；3 emergency stop |
+| 2 | `uint16 enum` | active control source；None=0 或公共头 Source。无新鲜命令（bit2=0）时必须上报 None=0 |
+| 4 | `uint32 bitmask` | bit0 Beckhoff connected；1 logging；2 command fresh；3 保留（原规划为 emergency stop，当前实现恒为 0，见下） |
 | 8 | `uint64` | lifecycle changed Unix ns |
 | 16 | `uint64` | accepted command received Unix ns；无命令为 0 |
+
+bit3 说明：急停采集尚未接入状态发送路径（`YunSBot.Base.cpp` 构造 flags 时只产出
+bit0..bit2），发送端恒置 0，接收端不得依据 bit3 判断急停状态。接通急停采集属安全
+相关改动，须另立安全需求单评审后实施，届时再启用本 bit 并更新此表。
 
 PLC move state 不在这里重复，它只在 BeckhoffCommonGroup 中出现。
 

@@ -8,6 +8,7 @@
 #include "server.h"
 #include "server.handler.h"
 #include "robot_config.h"
+#include "robot_settings.hpp"
 
 class PageHandler : public Poco::Net::HTTPRequestHandler {
 public:
@@ -51,8 +52,13 @@ int HttpServer::main(const std::vector<std::string> &args)
 {
     unsigned short port = (unsigned short)config().getInt("HttpServer.port", _port);
 
+    // TODO: 7998 目前无鉴权，依赖私有控制网隔离；如需鉴权须 Master/Robot 两端协同
     // 1. Bind a ServerSocket with an address
-    Poco::Net::ServerSocket serverSocket(port);
+    // 监听网卡可经 basic.bind 收窄；默认 0.0.0.0/空 保持原全网卡绑定行为(不改可达性)。
+    const std::string bindAddr = ercp::GetSettings().Basic.Bind();
+    Poco::Net::ServerSocket serverSocket = (bindAddr.empty() || bindAddr == "0.0.0.0")
+        ? Poco::Net::ServerSocket(port)
+        : Poco::Net::ServerSocket(Poco::Net::SocketAddress(bindAddr, port));
 
     // 2. Pass the ServerSocket to a HttpServer
     Poco::Net::HTTPServer server(
@@ -149,7 +155,12 @@ Json Handler::innerHandler(Request &req)
 void Handler::handleRequest(Request &req, Response &res)
 {
     // Make feedback by data、
-    res.add("Access-Control-Allow-Origin", "*");
+    // 收紧 CORS: 不再无条件下发通配 `*`。仅当配置了 basic.cors_origin 白名单来源时
+    // 才输出该头(默认空 = 不输出)。Master 为 .NET WebRequest 非浏览器,不受影响。
+    const std::string corsOrigin = ercp::GetSettings().Basic.CorsOrigin();
+    if (!corsOrigin.empty()) {
+        res.add("Access-Control-Allow-Origin", corsOrigin);
+    }
     res.add("Access-Control-Allow-Methods", "POST,GET,OPTIONS,DELETE");
     res.add("Access-Control-Max-Age", "3600");
     res.add("Access-Control-Allow-Headers", "x-requested-with,content-type");
@@ -175,6 +186,16 @@ void Handler::handleRequest(Request &req, Response &res)
         return exit(false, ret.get("error").extract<std::string>());
     }
 
+    // M1: handler 业务失败时上提为信封 status=false,原因写入 info;
+    //     data 内的 status 字段保留,兼容旧客户端。
+    bool succ = true;
+    std::string info;
+    if (ret.has(kBusinessFailInfoKey)) {
+        succ = false;
+        info = ret.get(kBusinessFailInfoKey).extract<std::string>();
+        ret.remove(kBusinessFailInfoKey);
+    }
+
     if (ret.size() > 0) {
         if (ret.has("data") && ret.size() == 1) {
             data.set("data", ret.get("data"));
@@ -182,5 +203,5 @@ void Handler::handleRequest(Request &req, Response &res)
             data.set("data", ret);
         }
     }
-    return exit(true);
+    return exit(succ, info);
 }

@@ -77,11 +77,16 @@ namespace ercp {
             // Load settings from yaml file.
             YAML::Node set;
             is_loaded = Parse(set, YAML::LoadFile(setfile));
-
+            if (is_loaded < 0) {
+                // M5: 解析失败不再静默当成功(否则 basic.master 等回落默认值),
+                //     向上返回 -1,由启动流程拒绝进入运行态(见 RobotSystem/main.cpp)。
+                ROBOT_ERROR(true, "Failed to parse settings file: " << setfile)
+            }
         } catch (std::exception &e) {
             is_loaded = -1;
+            ROBOT_ERROR(true,
+                "Failed to load settings file: " << setfile << " (" << e.what() << ")")
         }
-        is_loaded = 1;
         return is_loaded;
     }
 
@@ -158,6 +163,9 @@ namespace ercp {
                 CONFIG(Basic.Verbose,   "verbose")
                 CONFIG(Basic.Master,    "master")
                 CONFIG(Basic.Cloud,     "cloud")
+                CONFIG(Basic.Bind,          "bind")
+                CONFIG(Basic.CorsOrigin,    "cors_origin")
+                CONFIG(Basic.MasterPriority,"master_priority")
             END_NS()
 
             BEGIN_NS("device")
@@ -238,6 +246,12 @@ void make_prop_info()
             .set_comment(u8"主端IP。");
         basic.emplace("cloud", types::_string, std::string("127.0.0.1"))
             .set_comment(u8"云端IP。");
+        basic.emplace("bind", types::_string, std::string("0.0.0.0"))
+            .set_comment(u8"7998 HTTP控制面监听网卡地址。0.0.0.0=全网卡。");
+        basic.emplace("cors_origin", types::_string, std::string(""))
+            .set_comment(u8"7998 CORS允许来源。空=不输出该头。");
+        basic.emplace("master_priority", types::_bool, true)
+            .set_comment(u8"Master强制优先仲裁开关。自主模式下Master命令<200ms时优先。");
     }
 
     {

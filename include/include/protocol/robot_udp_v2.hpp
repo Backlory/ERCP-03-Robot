@@ -1,3 +1,7 @@
+﻿// [SHARED-WIRE] 本文件是跨工程 wire 协议定义,禁止在本工程内单独修改。
+// SYNC-SOURCE : <repo-root>/shared-wire/robot_udp_v2.hpp
+// SYNC-VERSION: 1
+// SYNC-RULE   : 先改权威源并更新 golden/*.hex,再整文件复制到所有副本工程,最后各端跑黄金测试。
 #pragma once
 
 #include <array>
@@ -10,6 +14,9 @@
 #include <vector>
 
 namespace ercp::protocol::v2 {
+
+// 同步版本号:与文件头 SYNC-VERSION 保持一致;黄金测试将其打印进输出,供人工比对各端副本版本。
+constexpr int kRobotUdpV2SyncVersion = 1;
 
 using Bytes = std::vector<std::uint8_t>;
 
@@ -368,7 +375,6 @@ private:
 
 inline bool validSourceFor(MessageType type, Source source)
 {
-    if (source == Source::Test) return true;
     if (type == MessageType::RobotControl) {
         return source == Source::Master || source == Source::Cloud;
     }

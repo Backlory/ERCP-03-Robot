@@ -1,8 +1,19 @@
+﻿// [SHARED-WIRE] 本文件是跨工程 wire 协议定义,禁止在本工程内单独修改。
+// SYNC-SOURCE : <repo-root>/shared-wire/net_helper.hpp
+// SYNC-VERSION: 1
+// SYNC-RULE   : 先改权威源并更新 golden/*.hex,再整文件复制到所有副本工程,最后各端跑黄金测试。
+/**
+ * @file net_helper.hpp
+ * @brief Provides address parsing and small helpers shared by network adapters.
+ */
 #pragma once
 #include <regex>
 #include <boost/asio.hpp>
 
 namespace net {
+
+    // 同步版本号:与文件头 SYNC-VERSION 保持一致;黄金测试将其打印进输出,供人工比对各端副本版本。
+    constexpr int kNetHelperSyncVersion = 1;
 
     struct _input_net_type {
     };

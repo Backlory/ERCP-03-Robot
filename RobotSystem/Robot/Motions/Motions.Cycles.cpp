@@ -1,29 +1,78 @@
-﻿#include "robot_config.h"
+﻿#include <algorithm>
+#include <cstring>
+
+#include "robot_config.h"
 #include "robot_devices.h"
 #include "robot_settings.hpp"
 #include "yunsbot_config.h"
 #include "../YunSBot.h"
 namespace ercp {
+
+    // M2: 控制量量程 clamp,量程表见 docs/robot-udp-v2.md §4.1。
+    // 10 路连续控制量统一为归一化速度比 [-1.0, +1.0]:依据当前唯一生产发送端
+    // (Master 手柄映射,win_joystick 轴归一化输出 ±1、按键映射 ±1)。
+    // 注意:此为占位量程,PLC 工程单位与每路物理量程待 TwinCAT 权威 schema
+    // 与设备安全策略确认后收紧。codec 已拒绝 NaN/Inf,此处输入保证 finite。
+    static constexpr double kControlValueLo = -1.0;
+    static constexpr double kControlValueHi = +1.0;
+    static inline double clamp_control(double v)
+    {
+        return std::clamp(v, kControlValueLo, kControlValueHi);
+    }
+
     void YunSBot::_base::ControlRunnable2(double t) {
         auto& robot = GetRobot();
         protocol::v2::ControlPayload command = robot_udp_v2::ZeroControl();
         robot_udp_v2::CommandMetadata metadata;
         bool fresh = false;
         const bool automaticMode = m_RobotAutoMode.load();
-        const auto selectedSource = robot_udp_v2::SelectedControlSource(automaticMode);
-        metadata.source = selectedSource;
-        m_active_source = static_cast<std::uint16_t>(selectedSource);
 
-        if (automaticMode) {
-            fresh = parent.situaware.GetCommand(command, metadata, 0.1);
-        } else {
-            fresh = parent.master.GetCommand(command, metadata, 0.1);
+        // Task 11: Master 强制优先仲裁。自主(auto)模式下,若最近一帧 Master(31002) 命令
+        // 距今 < 200ms,视为人类介入,本周期丢弃 Cloud 改用 Master(仍按 0.1s fresh 逻辑回退)。
+        // 200ms 判定复用 receiver 内 mutex 保护的 latest_received_(仅在命令通过完整校验后更新),
+        // 经 GetCommand 线程安全读取,无需另存时间点。开关(m_master_priority)关闭时回退原硬二选一。
+        constexpr auto kMasterPriorityWindow = std::chrono::milliseconds(200);
+        constexpr double kMasterPriorityWindowSeconds =
+            std::chrono::duration<double>(kMasterPriorityWindow).count();
+        bool masterOverride = false;
+        if (automaticMode && m_master_priority.load()) {
+            protocol::v2::ControlPayload probeCommand;
+            robot_udp_v2::CommandMetadata probeMetadata;
+            if (parent.master.GetCommand(
+                    probeCommand, probeMetadata, kMasterPriorityWindowSeconds)) {
+                masterOverride = true;
+                m_master_priority_overrides.fetch_add(1);
+                // Cloud 命令因仲裁被丢弃,节流日志便于联调(复用 stats 日志风格)。
+                static auto lastOverrideLog = std::chrono::steady_clock::now();
+                const auto nowLog = std::chrono::steady_clock::now();
+                if (GetSettings().Basic.Verbose() > 0
+                    && nowLog - lastOverrideLog >= std::chrono::seconds(10)) {
+                    ROBOT_INFO(true, fmt::format(
+                        "Robot V2 master-priority override: cloud command dropped, overrides={}",
+                        m_master_priority_overrides.load()))
+                    lastOverrideLog = nowLog;
+                }
+            }
         }
+
+        const bool useMaster = !automaticMode || masterOverride;
+        const auto selectedSource = useMaster
+            ? protocol::v2::Source::Master : protocol::v2::Source::Cloud;
+        metadata.source = selectedSource;
+
+        if (useMaster) {
+            fresh = parent.master.GetCommand(command, metadata, 0.1);
+        } else {
+            fresh = parent.situaware.GetCommand(command, metadata, 0.1);
+        }
+        // L16: 无新鲜命令(与 flags bit2 同一 fresh 判定)时 active_source 上报 None=0,
+        // 不再声称某个来源"正在控制"。
+        m_active_source = fresh ? static_cast<std::uint16_t>(selectedSource) : 0u;
 
         if (fresh) {
             m_accepted_command_received_unix_ns = metadata.received_unix_ns;
         } else {
-            auto &channel = automaticMode ? parent.situaware : parent.master;
+            auto &channel = useMaster ? parent.master : parent.situaware;
             channel.LatestCommand(command, metadata);
             command = robot_udp_v2::ZeroControl();
         }
@@ -65,16 +114,20 @@ namespace ercp {
     void YunSBot::_base::build_follow_cmd(
         const protocol::v2::ControlPayload &cmd, beckhoff_follow_cmd &follow_cmd)
     {
-        follow_cmd.follow_comp_botton = cmd.values[0];
-        follow_cmd.vel_move = cmd.values[1];
-        follow_cmd.vel_rotate = cmd.values[2];
-        follow_cmd.vel_bend_lr = cmd.values[3];
-        follow_cmd.vel_bend_ud = cmd.values[4];
-        follow_cmd.vel_pincer = cmd.values[5];
-        follow_cmd.vel_cutter_feed = cmd.values[6];
-        follow_cmd.vel_cutter_rot = cmd.values[7];
-        follow_cmd.vel_cutter_bend = cmd.values[8];
-        follow_cmd.vel_wire_feed = cmd.values[9];
+        // L23: 88B 结构体含 2B 尾部对齐 padding,写 PLC 前整体清零,
+        // 避免未初始化字节随 ADS 写入 PLC。
+        std::memset(&follow_cmd, 0, sizeof(follow_cmd));
+        // M2: 写 PLC 前逐路 clamp 到协议量程(docs/robot-udp-v2.md §4.1)
+        follow_cmd.follow_comp_botton = clamp_control(cmd.values[0]);
+        follow_cmd.vel_move = clamp_control(cmd.values[1]);
+        follow_cmd.vel_rotate = clamp_control(cmd.values[2]);
+        follow_cmd.vel_bend_lr = clamp_control(cmd.values[3]);
+        follow_cmd.vel_bend_ud = clamp_control(cmd.values[4]);
+        follow_cmd.vel_pincer = clamp_control(cmd.values[5]);
+        follow_cmd.vel_cutter_feed = clamp_control(cmd.values[6]);
+        follow_cmd.vel_cutter_rot = clamp_control(cmd.values[7]);
+        follow_cmd.vel_cutter_bend = clamp_control(cmd.values[8]);
+        follow_cmd.vel_wire_feed = clamp_control(cmd.values[9]);
         follow_cmd.home_rotate = (cmd.switches & (1u << 0)) != 0;
         follow_cmd.home_bend_lr = (cmd.switches & (1u << 1)) != 0;
         follow_cmd.home_bend_ud = (cmd.switches & (1u << 2)) != 0;
