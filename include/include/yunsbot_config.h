@@ -20,7 +20,7 @@ enum class motor_t : int {
     oper_big = (11),
     oper_small = (12),
     // 切开刀操作台电机
-    cutter_rot = (14),
+    cutter_rot = (14), // 生产标识名；业务语义为切开刀摆转
     cutter_feed = (15),
     // 其他类型
     cutter_bend = (128),
@@ -71,8 +71,8 @@ struct beckhoff_follow_cmd {
     double vel_pincer = 0;
 
     double vel_cutter_feed = 0;
-    double vel_cutter_rot = 0;
-    double vel_cutter_bend = 0;
+    double vel_cutter_rot = 0; // 生产业务语义：切开刀摆转
+    double vel_cutter_bend = 0; // 生产业务语义：切开刀拉弓
     double vel_wire_feed = 0;
 
     bool home_rotate = false;

@@ -70,8 +70,8 @@ NaN 和正负 Inf 均拒绝。V2.0 暂不在 codec 中猜测量程，Robot 在�
 | 32 | 8 | `binary64` | `scope_bend_ud` |
 | 40 | 8 | `binary64` | `pincer` |
 | 48 | 8 | `binary64` | `cutter_feed` |
-| 56 | 8 | `binary64` | `cutter_rotate` |
-| 64 | 8 | `binary64` | `cutter_bend` |
+| 56 | 8 | `binary64` | `cutter_swing` |
+| 64 | 8 | `binary64` | `cutter_bend`（切开刀拉弓） |
 | 72 | 8 | `binary64` | `guide_wire_feed` |
 | 80 | 2 | `uint16 bitmask` | `switches` |
 | 82 | 6 | bytes | `reserved`，必须全 0 |
@@ -100,7 +100,7 @@ Robot 在来源仲裁后、写入 PLC 前对 10 路连续控制量逐路 clamp �
 | `scope_bend_ud` | 归一化速度比 | [-1.0, +1.0] |
 | `pincer` | 归一化速度比 | [-1.0, +1.0] |
 | `cutter_feed` | 归一化速度比 | [-1.0, +1.0] |
-| `cutter_rotate` | 归一化速度比 | [-1.0, +1.0] |
+| `cutter_swing` | 归一化速度比 | [-1.0, +1.0] |
 | `cutter_bend` | 归一化速度比 | [-1.0, +1.0] |
 | `guide_wire_feed` | 归一化速度比 | [-1.0, +1.0] |
 
@@ -173,7 +173,7 @@ PLC move state 不在这里重复，它只在 BeckhoffCommonGroup 中出现。
 rotate degree、follow force、axis position 0..18。全部为 PLC native engineering unit。
 
 PLC move state 当前具名值：Initial=0、Folding=10、Folded=11、Opening=20、Opened=21、
-Following=30、Followed=31、OneClickFollowing=40、OneClickFollowed=41。线类型始终是 `uint32`；
+Following=30、Followed=31。线类型始终是 `uint32`；
 接收端不得因为值不在当前名称表中而拒绝或改写它。
 
 ### 5.3 RawIoGroup (ID=3, version=1, size=40)

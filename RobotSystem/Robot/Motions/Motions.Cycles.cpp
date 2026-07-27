@@ -20,6 +20,37 @@ namespace ercp {
         return std::clamp(v, kControlValueLo, kControlValueHi);
     }
 
+    static protocol::v2::ControlPayload applied_control(
+        const beckhoff_follow_cmd &follow_cmd)
+    {
+        using protocol::v2::ControlValueIndex;
+        using protocol::v2::controlIndex;
+        protocol::v2::ControlPayload applied;
+        applied.values[controlIndex(ControlValueIndex::FollowCompensation)] =
+            follow_cmd.follow_comp_botton;
+        applied.values[controlIndex(ControlValueIndex::ScopeMove)] = follow_cmd.vel_move;
+        applied.values[controlIndex(ControlValueIndex::ScopeRotate)] = follow_cmd.vel_rotate;
+        applied.values[controlIndex(ControlValueIndex::ScopeBendLr)] = follow_cmd.vel_bend_lr;
+        applied.values[controlIndex(ControlValueIndex::ScopeBendUd)] = follow_cmd.vel_bend_ud;
+        applied.values[controlIndex(ControlValueIndex::Pincer)] = follow_cmd.vel_pincer;
+        applied.values[controlIndex(ControlValueIndex::CutterFeed)] =
+            follow_cmd.vel_cutter_feed;
+        applied.values[controlIndex(ControlValueIndex::CutterSwing)] =
+            follow_cmd.vel_cutter_rot;
+        applied.values[controlIndex(ControlValueIndex::CutterBend)] =
+            follow_cmd.vel_cutter_bend;
+        applied.values[controlIndex(ControlValueIndex::GuideWireFeed)] =
+            follow_cmd.vel_wire_feed;
+        applied.switches =
+            (follow_cmd.home_rotate ? 1u << 0 : 0u)
+            | (follow_cmd.home_bend_lr ? 1u << 1 : 0u)
+            | (follow_cmd.home_bend_ud ? 1u << 2 : 0u)
+            | (follow_cmd.switch_water ? 1u << 3 : 0u)
+            | (follow_cmd.switch_gas ? 1u << 4 : 0u)
+            | (follow_cmd.switch_suct ? 1u << 5 : 0u);
+        return applied;
+    }
+
     void YunSBot::_base::ControlRunnable2(double t) {
         auto& robot = GetRobot();
         protocol::v2::ControlPayload command = robot_udp_v2::ZeroControl();
@@ -106,8 +137,10 @@ namespace ercp {
             ? protocol::v2::ApplyResult::Failed
             : (fresh ? protocol::v2::ApplyResult::Succeeded
                      : protocol::v2::ApplyResult::TimedOutToZero);
+        // 状态中的历史命令必须等于实际交给 ADS 的 10+6，而不是限幅前的网络原值。
+        const auto appliedCommand = applied_control(follow_cmd);
         m_applied_commands.MarkAttempt(
-            command, metadata, result, adsError, appliedAt, succeeded);
+            appliedCommand, metadata, result, adsError, appliedAt, succeeded);
     }
 
     // 建立跟随命令信息
@@ -118,16 +151,27 @@ namespace ercp {
         // 避免未初始化字节随 ADS 写入 PLC。
         std::memset(&follow_cmd, 0, sizeof(follow_cmd));
         // M2: 写 PLC 前逐路 clamp 到协议量程(docs/robot-udp-v2.md §4.1)
-        follow_cmd.follow_comp_botton = clamp_control(cmd.values[0]);
-        follow_cmd.vel_move = clamp_control(cmd.values[1]);
-        follow_cmd.vel_rotate = clamp_control(cmd.values[2]);
-        follow_cmd.vel_bend_lr = clamp_control(cmd.values[3]);
-        follow_cmd.vel_bend_ud = clamp_control(cmd.values[4]);
-        follow_cmd.vel_pincer = clamp_control(cmd.values[5]);
-        follow_cmd.vel_cutter_feed = clamp_control(cmd.values[6]);
-        follow_cmd.vel_cutter_rot = clamp_control(cmd.values[7]);
-        follow_cmd.vel_cutter_bend = clamp_control(cmd.values[8]);
-        follow_cmd.vel_wire_feed = clamp_control(cmd.values[9]);
+        using protocol::v2::ControlValueIndex;
+        using protocol::v2::controlIndex;
+        follow_cmd.follow_comp_botton =
+            clamp_control(cmd.values[controlIndex(ControlValueIndex::FollowCompensation)]);
+        follow_cmd.vel_move = clamp_control(cmd.values[controlIndex(ControlValueIndex::ScopeMove)]);
+        follow_cmd.vel_rotate =
+            clamp_control(cmd.values[controlIndex(ControlValueIndex::ScopeRotate)]);
+        follow_cmd.vel_bend_lr =
+            clamp_control(cmd.values[controlIndex(ControlValueIndex::ScopeBendLr)]);
+        follow_cmd.vel_bend_ud =
+            clamp_control(cmd.values[controlIndex(ControlValueIndex::ScopeBendUd)]);
+        follow_cmd.vel_pincer = clamp_control(cmd.values[controlIndex(ControlValueIndex::Pincer)]);
+        follow_cmd.vel_cutter_feed =
+            clamp_control(cmd.values[controlIndex(ControlValueIndex::CutterFeed)]);
+        // 生产 yunsbot_config.h 将这一自由度定义为“切开刀摆转”。
+        follow_cmd.vel_cutter_rot =
+            clamp_control(cmd.values[controlIndex(ControlValueIndex::CutterSwing)]);
+        follow_cmd.vel_cutter_bend =
+            clamp_control(cmd.values[controlIndex(ControlValueIndex::CutterBend)]);
+        follow_cmd.vel_wire_feed =
+            clamp_control(cmd.values[controlIndex(ControlValueIndex::GuideWireFeed)]);
         follow_cmd.home_rotate = (cmd.switches & (1u << 0)) != 0;
         follow_cmd.home_bend_lr = (cmd.switches & (1u << 1)) != 0;
         follow_cmd.home_bend_ud = (cmd.switches & (1u << 2)) != 0;

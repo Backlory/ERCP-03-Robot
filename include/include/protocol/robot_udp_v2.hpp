@@ -1,6 +1,6 @@
 ﻿// [SHARED-WIRE] 本文件是跨工程 wire 协议定义,禁止在本工程内单独修改。
 // SYNC-SOURCE : <repo-root>/shared-wire/robot_udp_v2.hpp
-// SYNC-VERSION: 1
+// SYNC-VERSION: 2
 // SYNC-RULE   : 先改权威源并更新 golden/*.hex,再整文件复制到所有副本工程,最后各端跑黄金测试。
 #pragma once
 
@@ -16,7 +16,7 @@
 namespace ercp::protocol::v2 {
 
 // 同步版本号:与文件头 SYNC-VERSION 保持一致;黄金测试将其打印进输出,供人工比对各端副本版本。
-constexpr int kRobotUdpV2SyncVersion = 1;
+constexpr int kRobotUdpV2SyncVersion = 2;
 
 using Bytes = std::vector<std::uint8_t>;
 
@@ -53,6 +53,28 @@ enum class GroupId : std::uint16_t {
     Extension = 8,
 };
 
+// RobotControl values 的稳定线序。CutterSwing 对应生产 Beckhoff
+// control_cmd::cannula.vel_cutter_rotate（“切开刀摆转”）以及 native
+// beckhoff_follow_cmd::vel_cutter_rot；这里的 swing 避免被误解为轴向旋转。
+enum class ControlValueIndex : std::size_t {
+    FollowCompensation = 0,
+    ScopeMove = 1,
+    ScopeRotate = 2,
+    ScopeBendLr = 3,
+    ScopeBendUd = 4,
+    Pincer = 5,
+    CutterFeed = 6,
+    CutterSwing = 7,
+    CutterBend = 8,
+    GuideWireFeed = 9,
+    Count = 10,
+};
+
+constexpr std::size_t controlIndex(ControlValueIndex value)
+{
+    return static_cast<std::size_t>(value);
+}
+
 struct Header {
     std::uint32_t magic = kMagic;
     std::uint16_t version_major = kVersionMajor;
@@ -69,7 +91,7 @@ struct Header {
 };
 
 struct ControlPayload {
-    std::array<double, 10> values{};
+    std::array<double, controlIndex(ControlValueIndex::Count)> values{};
     std::uint16_t switches = 0;
 };
 

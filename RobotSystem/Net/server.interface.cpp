@@ -215,9 +215,9 @@ namespace server {
         {motor_t::oper_small,      u8"小拨轮"},
         {motor_t::oper_pincer,     u8"抬钳器"},
         {motor_t::oper_rotate,     u8"镜体旋转"},
-        {motor_t::cutter_rot,      u8"切开刀旋转"},
+        {motor_t::cutter_rot,      u8"切开刀摆转"},
         {motor_t::cutter_feed,     u8"切开刀输送"},
-        {motor_t::cutter_bend,     u8"切开刀弯曲"},
+        {motor_t::cutter_bend,     u8"切开刀拉弓"},
         {motor_t::cutter_push,     u8"切开刀送刀"},
     };
         // clang-format on
