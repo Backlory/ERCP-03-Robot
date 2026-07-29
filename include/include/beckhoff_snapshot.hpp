@@ -20,6 +20,9 @@ enum SnapshotGroup : std::uint8_t {
 };
 
 struct GoldDiscreteCommand {
+    // V3 transport can carry all fields below, but the production ADS snapshot
+    // currently proves only robot_action. Do not map the remaining fields to
+    // PLC symbols without a verified TwinCAT symbol/ABI contract.
     int robot_action = -1;
     bool operate = false;
     bool cooperate = false;

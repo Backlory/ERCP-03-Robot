@@ -25,7 +25,8 @@ namespace ercp {
     {
         using protocol::v2::ControlValueIndex;
         using protocol::v2::controlIndex;
-        protocol::v2::ControlPayload applied = requested;
+        protocol::v2::ControlPayload applied;
+        applied.robot_action = requested.robot_action;
         applied.values[controlIndex(ControlValueIndex::FollowCompensation)] =
             follow_cmd.follow_comp_botton;
         applied.values[controlIndex(ControlValueIndex::ScopeMove)] = follow_cmd.vel_move;
@@ -108,6 +109,23 @@ namespace ercp {
             command = robot_udp_v2::ZeroControl();
         }
         m_command_fresh = fresh;
+
+        // Preserve the production Beckhoff contract: ERCP operate state is the
+        // only proven discrete ERCP symbol and is written only on state changes.
+        bool ercp_online = robot.BeckhoffIsERCPOnline();
+        bool ercp_ready = robot.BeckhoffIsERCPReady();
+        static bool bERCPOnline = ercp_online;
+        static bool bERCPReady = false;
+        if (ercp_online != bERCPOnline) {
+            if (!ercp_online)
+                robot.BeckhoffERCPOperateState(false);
+            else if (ercp_ready)
+                robot.BeckhoffERCPOperateState(true);
+        } else if (ercp_online && ercp_ready != bERCPReady) {
+            robot.BeckhoffERCPOperateState(ercp_ready);
+        }
+        bERCPOnline = ercp_online;
+        bERCPReady = ercp_ready;
 
         // 只在此处将网络控制字映射为 PLC native 10+6。
         beckhoff_follow_cmd follow_cmd;

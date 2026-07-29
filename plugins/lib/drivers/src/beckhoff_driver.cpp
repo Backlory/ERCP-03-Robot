@@ -173,34 +173,11 @@ namespace device { namespace beckhoff {
     std::uint32_t Beckhoff_Motor::GoldDiscreteCommandResult(
         const device::beckhoff::GoldDiscreteCommand &command)
     {
-        std::uint32_t result = ADSERR_NOERR;
         if (command.robot_action >= 0) {
-            KeepFirstError(result, WriteData("MAIN.Status_Command_FromMaster",
-                sizeof(command.robot_action), &command.robot_action));
+            return WriteData("MAIN.Status_Command_FromMaster",
+                sizeof(command.robot_action), &command.robot_action);
         }
-        KeepFirstError(result, WriteData("MAIN_ERCP.bERCP_Operate_State_FromMaster",
-            sizeof(command.operate), &command.operate));
-        KeepFirstError(result, WriteData("MAIN_ERCP.bErcp_Cooperate_Enable",
-            sizeof(command.cooperate), &command.cooperate));
-        KeepFirstError(result, WriteData(
-            "MAIN_ERCP.ERCP_Control_Cmd.Cmd_6Dhandle_Joy_FromMaster",
-            sizeof(command.handle_6d), command.handle_6d));
-        KeepFirstError(result, WriteData(
-            "MAIN_ERCP.ERCP_Control_Cmd.Cmd_Button_Joy_FromMaster",
-            sizeof(command.buttons), command.buttons));
-        KeepFirstError(result, WriteData("MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_01",
-            sizeof(command.inject_velocity[0]), &command.inject_velocity[0]));
-        KeepFirstError(result, WriteData("MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_02",
-            sizeof(command.inject_velocity[1]), &command.inject_velocity[1]));
-        KeepFirstError(result, WriteData("MAIN_ERCP.ERCP_Inject_Cmd.Inject_Pos_01",
-            sizeof(command.inject_position[0]), &command.inject_position[0]));
-        KeepFirstError(result, WriteData("MAIN_ERCP.ERCP_Inject_Cmd.Inject_Pos_02",
-            sizeof(command.inject_position[1]), &command.inject_position[1]));
-        KeepFirstError(result, WriteData("MAIN_ERCP.ERCP_Inject_Cmd.Inject_Enable_01",
-            sizeof(command.inject_enable[0]), &command.inject_enable[0]));
-        KeepFirstError(result, WriteData("MAIN_ERCP.ERCP_Inject_Cmd.Inject_Enable_02",
-            sizeof(command.inject_enable[1]), &command.inject_enable[1]));
-        return result;
+        return ADSERR_NOERR;
     }
 
     // ��������
@@ -430,29 +407,11 @@ namespace device { namespace beckhoff {
 
             beckhoff_arm_move_state moveState{};
             FeedbackData feedback{};
-            INT16 prepareState = 0;
-            bool robotDriveError = false;
-            bool robotDriveErrors[22]{};
-            bool robotMotorError = false;
-            bool robotMotorErrors[19]{};
-            int scopeType = 0;
             std::uint32_t commonError = ADSERR_NOERR;
             KeepFirstError(commonError, ReadData("MAIN.Status_Feedback_ToMaster",
                 sizeof(moveState), &moveState));
             KeepFirstError(commonError, ReadData(
                 "MAIN.Info_Feedback_ToMaster", sizeof(feedback), &feedback));
-            KeepFirstError(commonError,
-                ReadData("MAIN.iPrepare_State", sizeof(prepareState), &prepareState));
-            KeepFirstError(commonError, ReadData(
-                "MAIN.bErro_State_Drive", sizeof(robotDriveError), &robotDriveError));
-            KeepFirstError(commonError, ReadData(
-                "MAIN.DriveErrorState", sizeof(robotDriveErrors), robotDriveErrors));
-            KeepFirstError(commonError, ReadData(
-                "MAIN.bErro_State_Motor", sizeof(robotMotorError), &robotMotorError));
-            KeepFirstError(commonError, ReadData(
-                "MAIN.MotorErrorState", sizeof(robotMotorErrors), robotMotorErrors));
-            KeepFirstError(commonError,
-                ReadData("MAIN.type_of_scope", sizeof(scopeType), &scopeType));
             next.common_ads_error = commonError;
             KeepFirstError(next.overall_ads_error, commonError);
             if (commonError == ADSERR_NOERR) {
@@ -462,16 +421,6 @@ namespace device { namespace beckhoff {
                     | (feedback.Switch_Gas ? 1u << 1 : 0u)
                     | (feedback.Switch_Suck ? 1u << 2 : 0u));
                 next.power_level = feedback.Power_level;
-                next.prepare_state = prepareState == 1 ? 1 : 0;
-                next.error_flags = static_cast<std::uint8_t>(
-                    (robotDriveError ? 1u : 0u) | (robotMotorError ? 2u : 0u));
-                next.drive_errors = 0;
-                for (std::size_t i = 0; i < std::size(robotDriveErrors); ++i)
-                    if (robotDriveErrors[i]) next.drive_errors |= 1u << i;
-                next.motor_errors = 0;
-                for (std::size_t i = 0; i < std::size(robotMotorErrors); ++i)
-                    if (robotMotorErrors[i]) next.motor_errors |= 1u << i;
-                next.scope_type = scopeType;
                 next.common_values[0] = feedback.Follow_Length;
                 next.common_values[1] = feedback.Big_Whell;
                 next.common_values[2] = feedback.Small_Whell;
@@ -512,9 +461,9 @@ namespace device { namespace beckhoff {
             bool ercpOnline = false;
             bool ercpReady = false;
             bool driveError = false;
-            bool driveErrors[13]{};
+            bool driveErrors[14]{};
             bool motorError = false;
-            bool motorErrors[11]{};
+            bool motorErrors[12]{};
             int ercpType = 0;
             int ercpMoveStatus = 0;
             bool loadDirection = false;
@@ -579,8 +528,8 @@ namespace device { namespace beckhoff {
                 next.inject_current_position_02 = ercpFeedback.Inject_CurPos_02;
                 next.inject_state_01 = ercpFeedback.Inject_State_01;
                 next.inject_state_02 = ercpFeedback.Inject_State_02;
-                next.balloon_pressure = ercpFeedback.Balloon_Pressure;
-                next.operator_position = ercpFeedback.Operator_Pos;
+                next.balloon_pressure = 0;
+                next.operator_position = 0.0;
                 next.valid_groups |= SnapshotErcpFeedback;
                 next.stale_groups &= static_cast<std::uint8_t>(~SnapshotErcpFeedback);
                 next.sampled_at_unix_ns[3] = UnixNowNs();
