@@ -393,35 +393,25 @@ namespace device { namespace beckhoff {
             next.overall_ads_error = ADSERR_NOERR;
 
             beckhoff_arm_move_state moveState{};
+            INT16 prepareState{};
+            std::int32_t scopeType{};
             FeedbackData feedback{};
             std::uint32_t commonError = ADSERR_NOERR;
             KeepFirstError(commonError, ReadData("MAIN.Status_Feedback_ToMaster",
                 sizeof(moveState), &moveState));
+            KeepFirstError(commonError,
+                ReadData("MAIN.iPrepare_State", sizeof(prepareState), &prepareState));
+            KeepFirstError(commonError,
+                ReadData("MAIN.type_of_scope", sizeof(scopeType), &scopeType));
             KeepFirstError(commonError, ReadData(
                 "MAIN.Info_Feedback_ToMaster", sizeof(feedback), &feedback));
             next.common_ads_error = commonError;
             KeepFirstError(next.overall_ads_error, commonError);
             if (commonError == ADSERR_NOERR) {
                 next.move_state = static_cast<std::uint32_t>(moveState);
-                next.output_switches = static_cast<std::uint16_t>(
-                    (feedback.Switch_Water ? 1u << 0 : 0u)
-                    | (feedback.Switch_Gas ? 1u << 1 : 0u)
-                    | (feedback.Switch_Suck ? 1u << 2 : 0u));
-                next.power_level = feedback.Power_level;
-                next.common_values[0] = feedback.Follow_Length;
-                next.common_values[1] = feedback.Big_Whell;
-                next.common_values[2] = feedback.Small_Whell;
-                std::copy(std::begin(feedback.Force_Sensor), std::end(feedback.Force_Sensor),
-                    next.common_values.begin() + 3);
-                next.common_values[13] = feedback.lifter;
-                next.common_values[14] = feedback.Deliver_force;
-                next.common_values[15] = feedback.Rotate_Deqree;
-                next.common_values[16] = feedback.Follow_Force;
-                // V3 wire compatibility: publish the first 19 of the PLC's 21
-                // axes. The two additional axes are read to satisfy the ADS ABI
-                // but are not silently appended to the fixed-size UDP group.
-                std::copy_n(std::begin(feedback.Asex_Pos), 19,
-                    next.common_values.begin() + 17);
+                ApplyRobotFeedback(feedback, next);
+                next.prepare_state = prepareState == 1 ? 1 : 0;
+                next.scope_type = scopeType;
                 next.valid_groups |= SnapshotCommon;
                 next.stale_groups &= static_cast<std::uint8_t>(~SnapshotCommon);
                 next.sampled_at_unix_ns[0] = UnixNowNs();

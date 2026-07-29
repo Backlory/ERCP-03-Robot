@@ -28,5 +28,8 @@
       <Filter>devices</Filter>
     </ClInclude>
     <ClInclude Include="..\..\lib\drivers\src\beckhoff_driver.hpp" />
+    <ClInclude Include="..\..\..\include\include\beckhoff_feedback_layout.hpp">
+      <Filter>devices</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

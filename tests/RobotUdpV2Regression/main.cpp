@@ -10,6 +10,7 @@
 
 #include "protocol/robot_udp_v2.hpp"
 #include "robot_udp_v2_runtime.hpp"
+#include "beckhoff_feedback_layout.hpp"
 
 namespace protocol = ercp::protocol::v2;
 namespace runtime = ercp::robot_udp_v2;
@@ -47,6 +48,46 @@ protocol::Bytes ControlPacket(protocol::Source source, std::uint64_t session,
     std::string error;
     Expect(protocol::encodeControl(header, payload, bytes, &error), "control packet encodes");
     return bytes;
+}
+
+void TestBeckhoffFeedbackLayout()
+{
+    device::beckhoff::RobotFeedbackData feedback{};
+    feedback.Follow_Length = 0.25;
+    feedback.Switch_Water = true;
+    feedback.Switch_Suck = true;
+    for (std::size_t index = 0; index < 21; ++index) {
+        feedback.Axes_Pos[index] = 100.0 + index;
+    }
+    feedback.Big_Whell = 1.25;
+    feedback.Small_Whell = -2.5;
+    for (std::size_t index = 0; index < 10; ++index) {
+        feedback.Force_Sensor[index] = 10.0 + index;
+    }
+    feedback.Power_level = 73;
+    feedback.lifter = 3.25;
+    feedback.Deliver_force = 4.25;
+    feedback.Rotate_Deqree = 5.25;
+    feedback.Follow_Force = 6.25;
+
+    device::beckhoff::BeckhoffSnapshot snapshot;
+    device::beckhoff::ApplyRobotFeedback(feedback, snapshot);
+    Expect(snapshot.output_switches == 0x0005 && snapshot.power_level == 73,
+        "Beckhoff switches and power preserve deployed layout");
+    Expect(snapshot.common_values[0] == 0.25
+            && snapshot.common_values[1] == 1.25
+            && snapshot.common_values[2] == -2.5,
+        "wheel feedback is not replaced by Axes_Pos");
+    Expect(snapshot.common_values[3] == 10.0
+            && snapshot.common_values[12] == 19.0
+            && snapshot.common_values[13] == 3.25
+            && snapshot.common_values[14] == 4.25
+            && snapshot.common_values[15] == 5.25
+            && snapshot.common_values[16] == 6.25,
+        "named Beckhoff feedback maps to the V3 common region");
+    Expect(snapshot.common_values[17] == 100.0
+            && snapshot.common_values[35] == 118.0,
+        "V3 axes contain the first 19 of the PLC's 21 Axes_Pos values");
 }
 
 void TestCodec()
@@ -604,6 +645,7 @@ int main()
 {
     std::cout << "kRobotUdpV2SyncVersion = " << protocol::kRobotUdpV2SyncVersion << '\n';
 
+    TestBeckhoffFeedbackLayout();
     TestCodec();
     TestFullStatus();
     TestSequenceAndSessions();

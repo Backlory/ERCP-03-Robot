@@ -38,6 +38,10 @@ V2/V3 混部会被双方的严格解码器拒绝。
 
 - 当前在线机器人 PLC 的 `MAIN.Info_Feedback_ToMaster` 为 320B，其中
   `Axes_Pos` 为 21 路；Robot ADS 侧完整读取 21 路，V3 UDP 为兼容固定布局仍发送前 19 路；
+  该结构的在线内存顺序是 `Follow_Length/Switches`、`Axes_Pos[21]`、
+  `Big_Wheel/Small_Wheel`、`Force_Sensor[10]`、`Power_level`、`lifter`、
+  `Deliver_Force`、`Rotate_Degree`、`Follow_Force`，不得按金标准表格展示顺序
+  直接声明 C++ block-read 结构；
 - `MAIN_ERCP.ERCP_Info_Feedback_ToMaster` 保持 104B 旧布局；
 - `DriveErrorState_ERCP` 和 `MotorErrorState_ERCP` 分别按 14、12 个 `BOOL` 读取；
 - 公共状态有效性只依赖原有

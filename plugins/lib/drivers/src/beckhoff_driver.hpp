@@ -12,6 +12,7 @@
 #include <fmt/format.h>
 
 #include "Device.hpp"
+#include "beckhoff_feedback_layout.hpp"
 #include "beckhoff_snapshot.hpp"
 #include "yunsbot_config.h"
 
@@ -34,30 +35,7 @@ namespace device { namespace beckhoff {
             return bf;
         }
 
-        struct FeedbackData {
-            double Follow_Length; // 介入长度
-            bool Switch_Water; // 水 状态
-            bool Switch_Gas; // 气 状态
-            bool Switch_Suck; // 吸引 状态
-    
-            double Big_Whell; // 大拨轮 0-1
-            double Small_Whell; // 小拨轮 0-1
-
-            double Force_Sensor[10]; // 力反馈信息
-            INT16 Power_level; // 电池信息
-
-            double lifter; // 抬钳器0-1;
-
-            double Deliver_force; // 输送力
-
-            double Rotate_Deqree; // 旋转角度
-
-            double Follow_Force; //跟随力/N
-
-            // The online robot PLC exposes ARRAY[1..21] OF LREAL. The V3 UDP
-            // contract still carries the first 19 axes for wire compatibility.
-            double Asex_Pos[21];
-        };
+        using FeedbackData = RobotFeedbackData;
         struct ERCPFeedbackData {
             double Deliver_Force; //器械输送力
             double GuideWire_Force; //导丝力
@@ -83,22 +61,6 @@ namespace device { namespace beckhoff {
 
         // These types are ADS wire layouts. Keep them byte-for-byte compatible
         // with the production TwinCAT structures represented by beckhoff-GT.
-        static_assert(sizeof(FeedbackData) == 320,
-            "FeedbackData must match MAIN.Info_Feedback_ToMaster");
-        static_assert(offsetof(FeedbackData, Follow_Length) == 0, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Switch_Water) == 8, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Switch_Gas) == 9, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Switch_Suck) == 10, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Big_Whell) == 16, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Small_Whell) == 24, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Force_Sensor) == 32, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Power_level) == 112, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, lifter) == 120, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Deliver_force) == 128, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Rotate_Deqree) == 136, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Follow_Force) == 144, "FeedbackData ABI drift");
-        static_assert(offsetof(FeedbackData, Asex_Pos) == 152, "FeedbackData ABI drift");
-
         static_assert(sizeof(ERCPFeedbackData) == 104,
             "ERCPFeedbackData must match MAIN_ERCP.ERCP_Info_Feedback_ToMaster");
         static_assert(offsetof(ERCPFeedbackData, Deliver_Force) == 0,

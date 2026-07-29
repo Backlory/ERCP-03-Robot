@@ -53,7 +53,7 @@ constexpr SymbolSpec kSymbols[] = {
     {"MAIN.Info_Feedback_ToMaster.Deliver_Force", "LREAL", 8, Access::ReadOnly},
     {"MAIN.Info_Feedback_ToMaster.Rotate_Degree", "LREAL", 8, Access::ReadOnly},
     {"MAIN.Info_Feedback_ToMaster.Follow_Force", "LREAL", 8, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Axes_Pos", "ARRAY[1..19] OF LREAL", 152, Access::ReadOnly},
+    {"MAIN.Info_Feedback_ToMaster.Axes_Pos", "ARRAY[1..21] OF LREAL", 168, Access::ReadOnly},
     {"MAIN.Emergency_Stop_FromMaster", "DINT", 4, Access::DangerousAction},
     {"MAIN.Follow_Control_Cmd.Cmd_Follow_Comp_Joy_FromMaster", "LREAL", 8, Access::SafeZeroWrite},
     {"MAIN.Follow_Control_Cmd.Cmd_Operator_Joy_FromMaster", "ARRAY[1..9] OF LREAL", 72, Access::SafeZeroWrite},
