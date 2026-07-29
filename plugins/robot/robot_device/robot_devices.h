@@ -27,6 +27,8 @@ namespace ercp {
         // 跟随数据
         virtual std::uint32_t BeckhoffFollowDataResult(
             unsigned long length, const void *data) const = 0;
+        virtual std::uint32_t BeckhoffGoldDiscreteCommandResult(
+            const device::beckhoff::GoldDiscreteCommand &command) const = 0;
         virtual bool BeckhoffArmOperation(beckhoff_arm_operation iArmOper)const = 0;
         virtual bool BeckhoffReadAsexPos(double asex_pos[19])const = 0;
         virtual bool IsOpen() const = 0;

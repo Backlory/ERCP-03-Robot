@@ -1,6 +1,6 @@
 ﻿// [SHARED-WIRE] 本文件是跨工程 wire 协议定义,禁止在本工程内单独修改。
 // SYNC-SOURCE : <repo-root>/shared-wire/robot_udp_v2.hpp
-// SYNC-VERSION: 2
+// SYNC-VERSION: 3
 // SYNC-RULE   : 先改权威源并更新 golden/*.hex,再整文件复制到所有副本工程,最后各端跑黄金测试。
 #pragma once
 
@@ -13,18 +13,20 @@
 #include <utility>
 #include <vector>
 
+// Historical filename retained so existing project includes remain stable.  The
+// wire major below is authoritative: this file now implements the gold V3 ABI.
 namespace ercp::protocol::v2 {
 
 // 同步版本号:与文件头 SYNC-VERSION 保持一致;黄金测试将其打印进输出,供人工比对各端副本版本。
-constexpr int kRobotUdpV2SyncVersion = 2;
+constexpr int kRobotUdpV2SyncVersion = 3;
 
 using Bytes = std::vector<std::uint8_t>;
 
 constexpr std::uint32_t kMagic = 0x45524350u; // "ERCP"
-constexpr std::uint16_t kVersionMajor = 2;
+constexpr std::uint16_t kVersionMajor = 3;
 constexpr std::uint16_t kVersionMinor = 0;
 constexpr std::size_t kHeaderSize = 48;
-constexpr std::size_t kControlPayloadSize = 104;
+constexpr std::size_t kControlPayloadSize = 176;
 constexpr std::size_t kControlPacketSize = kHeaderSize + kControlPayloadSize;
 constexpr std::size_t kStatusDirectorySize = 8;
 constexpr std::size_t kStatusGroupHeaderSize = 16;
@@ -93,6 +95,12 @@ struct Header {
 struct ControlPayload {
     std::array<double, controlIndex(ControlValueIndex::Count)> values{};
     std::uint16_t switches = 0;
+    std::uint16_t ercp_switches = 0; // operate, cooperate, button1, button2, handle-enable
+    std::int32_t robot_action = -1;  // -1 no-op; 0 standby, 1 fold, 2 open, 3 follow
+    std::array<double, 6> ercp_6d{};
+    std::array<double, 2> inject_velocity{};
+    std::array<double, 2> inject_position{};
+    std::uint16_t inject_enables = 0;
 };
 
 struct StatusGroup {
@@ -134,9 +142,11 @@ enum class BeckhoffMoveState : std::uint32_t {
 
 enum class ErcpDeviceType : std::int32_t {
     Cutter = 0,
-    Basket = 1,
-    Balloon = 2,
-    DrainageTube = 3,
+    DilatationBalloon = 1,
+    StoneBalloon = 2,
+    StoneBasket = 3,
+    CrushingBasket = 4,
+    DrainageTube = 5,
 };
 
 enum class ErcpMoveState : std::int32_t {
@@ -151,6 +161,8 @@ enum class ErcpMoveState : std::int32_t {
     Loaded = 41,
     Exchanging = 50,
     Exchanged = 51,
+    Switching = 60,
+    Switched = 61,
 };
 
 enum class InjectorState : std::int32_t {
@@ -188,6 +200,11 @@ struct BeckhoffCommonPayload {
     BeckhoffMoveState move_state = BeckhoffMoveState::Initial;
     std::uint16_t output_switches = 0;
     std::int16_t power_level = 0;
+    std::uint8_t prepare_state = 0;
+    std::uint8_t error_flags = 0; // bit0 drive summary, bit1 motor summary
+    std::uint32_t drive_errors = 0;
+    std::uint32_t motor_errors = 0;
+    std::int32_t scope_type = 0;
     std::array<double, 36> values{};
 };
 
@@ -205,9 +222,17 @@ struct ErcpStatePayload {
 };
 
 struct ErcpFeedbackPayload {
-    std::array<double, 12> values{};
+    double ercp_deliver_force = 0;
+    double guide_wire_force = 0;
+    double bow_force = 0;
+    double ercp_deliver_position = 0;
+    double guide_wire_position = 0;
+    double inject_current_position_01 = 0;
+    double inject_current_position_02 = 0;
     InjectorState inject_state_01 = InjectorState::Idle;
     InjectorState inject_state_02 = InjectorState::Idle;
+    std::int16_t balloon_pressure = 0;
+    double operator_position = 0;
 };
 
 struct AppliedCommandRecord {
@@ -424,6 +449,21 @@ inline bool validSwitches(std::uint16_t switches, std::string *error)
         : fail(error, "unknown control switch bit");
 }
 
+inline bool validControl(const ControlPayload &payload, std::string *error)
+{
+    if (!validSwitches(payload.switches, error)) return false;
+    if ((payload.ercp_switches & ~0x001Fu) != 0
+        || (payload.inject_enables & ~0x0003u) != 0
+        || payload.robot_action < -1 || payload.robot_action > 3) {
+        return fail(error, "unknown ERCP control bit");
+    }
+    for (double value : payload.values) if (!std::isfinite(value)) return fail(error, "non-finite control value");
+    for (double value : payload.ercp_6d) if (!std::isfinite(value)) return fail(error, "non-finite ERCP 6D value");
+    for (double value : payload.inject_velocity) if (!std::isfinite(value)) return fail(error, "non-finite inject velocity");
+    for (double value : payload.inject_position) if (!std::isfinite(value)) return fail(error, "non-finite inject position");
+    return true;
+}
+
 inline std::uint16_t be16(const Bytes &bytes, std::size_t offset)
 {
     return static_cast<std::uint16_t>((bytes[offset] << 8) | bytes[offset + 1]);
@@ -460,13 +500,13 @@ inline std::size_t knownGroupSize(std::uint16_t id)
 {
     switch (static_cast<GroupId>(id)) {
     case GroupId::RobotRuntime: return 24;
-    case GroupId::BeckhoffCommon: return 296;
+    case GroupId::BeckhoffCommon: return 312;
     case GroupId::RawIo: return 40;
     case GroupId::ErcpState: return 24;
-    case GroupId::ErcpFeedback: return 104;
-    case GroupId::AppliedCommand: return 256;
+    case GroupId::ErcpFeedback: return 80;
+    case GroupId::AppliedCommand: return 448;
     case GroupId::AdsDiagnostics: return 64;
-    case GroupId::Extension: return 32;
+    case GroupId::Extension: return 24;
     default: return 0;
     }
 }
@@ -499,7 +539,13 @@ inline bool validKnownGroup(const StatusGroup &group, std::string *error)
         if ((be16(group.payload, 4) & ~0x0007u) != 0) {
             return fail(error, "unknown Beckhoff output bit");
         }
-        for (std::size_t offset = 8; offset < group.payload.size(); offset += 8) {
+        if (group.payload[8] > 1 || (group.payload[9] & ~0x03u) != 0
+            || !allZero(group.payload, 10, 2)
+            || (be32(group.payload, 12) & ~0x003FFFFFu) != 0
+            || (be32(group.payload, 16) & ~0x0007FFFFu) != 0) {
+            return fail(error, "invalid robot PLC state");
+        }
+        for (std::size_t offset = 24; offset < group.payload.size(); offset += 8) {
             if (!finiteF64(group.payload, offset)) {
                 return fail(error, "non-finite Beckhoff feedback");
             }
@@ -510,35 +556,39 @@ inline bool validKnownGroup(const StatusGroup &group, std::string *error)
             ? true
             : fail(error, "non-zero raw IO reserved data");
     case GroupId::ErcpState:
-        if ((be16(group.payload, 0) & ~0x0007u) != 0 || be16(group.payload, 2) != 0
-            || (be16(group.payload, 4) & ~0x3FFFu) != 0
-            || (be16(group.payload, 6) & ~0x0FFFu) != 0
+        if ((be16(group.payload, 0) & ~0x001Fu) != 0 || be16(group.payload, 2) != 0
+            || (be16(group.payload, 4) & ~0x1FFFu) != 0
+            || (be16(group.payload, 6) & ~0x07FFu) != 0
             || !allZero(group.payload, 16, 8)) {
             return fail(error, "invalid ERCP state reserved data");
         }
         return true;
     case GroupId::ErcpFeedback:
-        for (std::size_t offset = 0; offset < 96; offset += 8) {
+        for (std::size_t offset = 0; offset < 56; offset += 8) {
             if (!finiteF64(group.payload, offset)) {
                 return fail(error, "non-finite ERCP feedback");
             }
         }
+        if (!allZero(group.payload, 66, 6) || !finiteF64(group.payload, 72)) {
+            return fail(error, "invalid ERCP feedback padding or operator position");
+        }
         return true;
     case GroupId::AppliedCommand:
         for (std::size_t record = 0; record < 2; ++record) {
-            const std::size_t base = record * 128;
-            for (std::size_t i = 0; i < 10; ++i) {
-                if (!finiteF64(group.payload, base + i * 8)) {
-                    return fail(error, "non-finite applied command");
-                }
-            }
-            const std::uint16_t source = be16(group.payload, base + 82);
-            const std::uint16_t result = be16(group.payload, base + 84);
+            const std::size_t base = record * 224;
+            for (std::size_t offset = 0; offset < 80; offset += 8)
+                if (!finiteF64(group.payload, base + offset)) return fail(error, "non-finite applied command");
+            for (std::size_t offset = 88; offset < 168; offset += 8)
+                if (!finiteF64(group.payload, base + offset)) return fail(error, "non-finite ERCP applied command");
+            const std::uint16_t source = be16(group.payload, base + 176);
+            const std::uint16_t result = be16(group.payload, base + 178);
             if ((be16(group.payload, base + 80) & ~0x003Fu) != 0
+                || (be16(group.payload, base + 82) & ~0x001Fu) != 0
+                || (be16(group.payload, base + 168) & ~0x0003u) != 0
+                || !allZero(group.payload, base + 170, 6)
                 || (source != 0 && source != 1 && source != 2 && source != 3 && source != 255)
                 || result > 5
-                || !allZero(group.payload, base + 86, 2)
-                || !allZero(group.payload, base + 124, 4)) {
+                || !allZero(group.payload, base + 216, 8)) {
                 return fail(error, "invalid applied command record");
             }
         }
@@ -597,10 +647,7 @@ inline bool encodeControl(const Header &header, const ControlPayload &payload, B
     std::string *error = nullptr)
 {
     if (!detail::validHeader(header, MessageType::RobotControl, error)) return false;
-    if (!detail::validSwitches(payload.switches, error)) return false;
-    for (double value : payload.values) {
-        if (!std::isfinite(value)) return detail::fail(error, "non-finite control value");
-    }
+    if (!detail::validControl(payload, error)) return false;
 
     output.clear();
     output.reserve(kControlPacketSize);
@@ -608,7 +655,13 @@ inline bool encodeControl(const Header &header, const ControlPayload &payload, B
     detail::writeHeader(writer, header, static_cast<std::uint32_t>(kControlPayloadSize));
     for (double value : payload.values) writer.f64(value);
     writer.u16(payload.switches);
-    for (int i = 0; i < 22; ++i) writer.u8(0);
+    writer.u16(payload.ercp_switches);
+    writer.i32(payload.robot_action);
+    for (double value : payload.ercp_6d) writer.f64(value);
+    for (double value : payload.inject_velocity) writer.f64(value);
+    for (double value : payload.inject_position) writer.f64(value);
+    writer.u16(payload.inject_enables);
+    for (int i = 0; i < 6; ++i) writer.u8(0);
     return output.size() == kControlPacketSize;
 }
 
@@ -625,9 +678,14 @@ inline bool decodeControl(const std::uint8_t *data, std::size_t size, Header &he
     for (double &value : payload.values) {
         if (!reader.f64(value)) return detail::fail(error, "invalid control double");
     }
-    if (!reader.u16(payload.switches) || !detail::validSwitches(payload.switches, error)) return false;
+    if (!reader.u16(payload.switches) || !reader.u16(payload.ercp_switches)
+        || !reader.i32(payload.robot_action)) return false;
+    for (double &value : payload.ercp_6d) if (!reader.f64(value)) return false;
+    for (double &value : payload.inject_velocity) if (!reader.f64(value)) return false;
+    for (double &value : payload.inject_position) if (!reader.f64(value)) return false;
+    if (!reader.u16(payload.inject_enables) || !detail::validControl(payload, error)) return false;
     Bytes reserved;
-    if (!reader.copy(reserved, 22) || !detail::allZero(reserved, 0, reserved.size())) {
+    if (!reader.copy(reserved, 6) || !detail::allZero(reserved, 0, reserved.size())) {
         return detail::fail(error, "non-zero control reserved data");
     }
     return reader.remaining() == 0;
@@ -665,7 +723,7 @@ inline bool encodeStatus(const Header &header, const std::vector<StatusGroup> &g
         }
         payloadSize += kStatusGroupHeaderSize + group.payload.size();
     }
-    if (isFullStatus(groups) && payloadSize + kHeaderSize != 1024) {
+    if (isFullStatus(groups) && payloadSize + kHeaderSize != 1200) {
         return detail::fail(error, "full status wire size changed");
     }
     if (payloadSize + kHeaderSize > kMaxPacketSize) return detail::fail(error, "status packet too large");
@@ -757,14 +815,21 @@ inline void writeAppliedCommand(Writer &writer, const AppliedCommandRecord &reco
 {
     for (double value : record.command.values) writer.f64(value);
     writer.u16(record.command.switches);
+    writer.u16(record.command.ercp_switches);
+    writer.i32(record.command.robot_action);
+    for (double value : record.command.ercp_6d) writer.f64(value);
+    for (double value : record.command.inject_velocity) writer.f64(value);
+    for (double value : record.command.inject_position) writer.f64(value);
+    writer.u16(record.command.inject_enables);
+    for (int i = 0; i < 6; ++i) writer.u8(0);
     writer.u16(static_cast<std::uint16_t>(record.source));
     writer.u16(static_cast<std::uint16_t>(record.result));
-    writer.u16(0);
     writer.u64(record.command_session_id);
     writer.u64(record.command_sequence);
     writer.u64(record.received_unix_ns);
     writer.u64(record.applied_unix_ns);
     writer.u32(record.ads_error);
+    writer.u32(0);
     writer.u32(0);
 }
 
@@ -775,13 +840,22 @@ inline bool readAppliedCommand(Reader &reader, AppliedCommandRecord &record)
     }
     std::uint16_t source = 0;
     std::uint16_t result = 0;
-    std::uint16_t reserved16 = 0;
-    std::uint32_t reserved32 = 0;
-    if (!reader.u16(record.command.switches) || !reader.u16(source) || !reader.u16(result)
-        || !reader.u16(reserved16) || !reader.u64(record.command_session_id)
+    std::uint32_t reserved32a = 0;
+    std::uint32_t reserved32b = 0;
+    Bytes reserved;
+    if (!reader.u16(record.command.switches) || !reader.u16(record.command.ercp_switches)
+        || !reader.i32(record.command.robot_action)) return false;
+    for (double &value : record.command.ercp_6d) if (!reader.f64(value)) return false;
+    for (double &value : record.command.inject_velocity) if (!reader.f64(value)) return false;
+    for (double &value : record.command.inject_position) if (!reader.f64(value)) return false;
+    if (!reader.u16(record.command.inject_enables) || !reader.copy(reserved, 6)
+        || !reader.u16(source) || !reader.u16(result)
+        || !reader.u64(record.command_session_id)
         || !reader.u64(record.command_sequence) || !reader.u64(record.received_unix_ns)
         || !reader.u64(record.applied_unix_ns) || !reader.u32(record.ads_error)
-        || !reader.u32(reserved32) || reserved16 != 0 || reserved32 != 0) {
+        || !reader.u32(reserved32a) || !reader.u32(reserved32b)
+        || !allZero(reserved, 0, reserved.size())
+        || reserved32a != 0 || reserved32b != 0) {
         return false;
     }
     record.source = static_cast<Source>(source);
@@ -806,7 +880,7 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
     groups.reserve(8);
 
     Bytes bytes;
-    bytes.reserve(296);
+    bytes.reserve(312);
     {
         detail::Writer writer(bytes);
         writer.u8(static_cast<std::uint8_t>(status.runtime.lifecycle));
@@ -824,6 +898,12 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
         writer.u32(static_cast<std::uint32_t>(status.beckhoff_common.move_state));
         writer.u16(status.beckhoff_common.output_switches);
         writer.i16(status.beckhoff_common.power_level);
+        writer.u8(status.beckhoff_common.prepare_state);
+        writer.u8(status.beckhoff_common.error_flags);
+        writer.u16(0);
+        writer.u32(status.beckhoff_common.drive_errors);
+        writer.u32(status.beckhoff_common.motor_errors);
+        writer.i32(status.beckhoff_common.scope_type);
         for (double value : status.beckhoff_common.values) writer.f64(value);
     }
     groups.push_back(detail::group(GroupId::BeckhoffCommon, status.sampled_at_unix_ns[1], std::move(bytes)));
@@ -853,9 +933,18 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
     bytes.clear();
     {
         detail::Writer writer(bytes);
-        for (double value : status.ercp_feedback.values) writer.f64(value);
+        writer.f64(status.ercp_feedback.ercp_deliver_force);
+        writer.f64(status.ercp_feedback.guide_wire_force);
+        writer.f64(status.ercp_feedback.bow_force);
+        writer.f64(status.ercp_feedback.ercp_deliver_position);
+        writer.f64(status.ercp_feedback.guide_wire_position);
+        writer.f64(status.ercp_feedback.inject_current_position_01);
+        writer.f64(status.ercp_feedback.inject_current_position_02);
         writer.i32(static_cast<std::int32_t>(status.ercp_feedback.inject_state_01));
         writer.i32(static_cast<std::int32_t>(status.ercp_feedback.inject_state_02));
+        writer.i16(status.ercp_feedback.balloon_pressure);
+        for (int i = 0; i < 6; ++i) writer.u8(0);
+        writer.f64(status.ercp_feedback.operator_position);
     }
     groups.push_back(detail::group(GroupId::ErcpFeedback, status.sampled_at_unix_ns[4], std::move(bytes)));
 
@@ -888,7 +977,7 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
     }
     groups.push_back(detail::group(GroupId::AdsDiagnostics, status.sampled_at_unix_ns[6], std::move(bytes)));
 
-    bytes.assign(32, 0);
+    bytes.assign(24, 0);
     groups.push_back(detail::group(GroupId::Extension, status.sampled_at_unix_ns[7], std::move(bytes)));
     return groups;
 }
@@ -931,7 +1020,14 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
             std::uint32_t moveState = 0;
             if (!reader.u32(moveState)
                 || !reader.u16(parsed.beckhoff_common.output_switches)
-                || !reader.i16(parsed.beckhoff_common.power_level)) return false;
+                || !reader.i16(parsed.beckhoff_common.power_level)
+                || !reader.u8(parsed.beckhoff_common.prepare_state)) return false;
+            if (!reader.u8(parsed.beckhoff_common.error_flags)) return false;
+            Bytes commonReserved;
+            if (!reader.copy(commonReserved, 2)
+                || !reader.u32(parsed.beckhoff_common.drive_errors)
+                || !reader.u32(parsed.beckhoff_common.motor_errors)
+                || !reader.i32(parsed.beckhoff_common.scope_type)) return false;
             parsed.beckhoff_common.move_state = static_cast<BeckhoffMoveState>(moveState);
             for (double &value : parsed.beckhoff_common.values) if (!reader.f64(value)) return false;
             return true;
@@ -959,10 +1055,20 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
         })) return detail::fail(error, "cannot parse ERCP state group");
 
     if (!parseGroup(GroupId::ErcpFeedback, [&](detail::Reader &reader) {
-            for (double &value : parsed.ercp_feedback.values) if (!reader.f64(value)) return false;
             std::int32_t injectState01 = 0;
             std::int32_t injectState02 = 0;
-            if (!reader.i32(injectState01) || !reader.i32(injectState02)) return false;
+            Bytes reserved;
+            if (!reader.f64(parsed.ercp_feedback.ercp_deliver_force)
+                || !reader.f64(parsed.ercp_feedback.guide_wire_force)
+                || !reader.f64(parsed.ercp_feedback.bow_force)
+                || !reader.f64(parsed.ercp_feedback.ercp_deliver_position)
+                || !reader.f64(parsed.ercp_feedback.guide_wire_position)
+                || !reader.f64(parsed.ercp_feedback.inject_current_position_01)
+                || !reader.f64(parsed.ercp_feedback.inject_current_position_02)
+                || !reader.i32(injectState01) || !reader.i32(injectState02)
+                || !reader.i16(parsed.ercp_feedback.balloon_pressure)
+                || !reader.copy(reserved, 6)
+                || !reader.f64(parsed.ercp_feedback.operator_position)) return false;
             parsed.ercp_feedback.inject_state_01 = static_cast<InjectorState>(injectState01);
             parsed.ercp_feedback.inject_state_02 = static_cast<InjectorState>(injectState02);
             return true;
@@ -995,7 +1101,7 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
 
     if (!parseGroup(GroupId::Extension, [](detail::Reader &reader) {
             Bytes reserved;
-            return reader.copy(reserved, 32);
+            return reader.copy(reserved, 24);
         })) return detail::fail(error, "cannot parse extension group");
 
     status = std::move(parsed);

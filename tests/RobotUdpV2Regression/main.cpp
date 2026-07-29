@@ -54,12 +54,12 @@ void TestCodec()
     const auto payload = SampleControl();
     auto bytes = ControlPacket(protocol::Source::Master, 0x0102030405060708ull,
         0x1112131415161718ull, payload);
-    Expect(bytes.size() == 152, "control wire size is 152");
+    Expect(bytes.size() == 224, "control wire size is 224");
     Expect(bytes[0] == 0x45 && bytes[1] == 0x52 && bytes[2] == 0x43 && bytes[3] == 0x50,
         "control golden magic");
     Expect(bytes[10] == 0 && bytes[11] == 1 && bytes[12] == 0 && bytes[13] == 2,
         "control golden type and source");
-    Expect(bytes[16] == 0 && bytes[17] == 0 && bytes[18] == 0 && bytes[19] == 104,
+    Expect(bytes[16] == 0 && bytes[17] == 0 && bytes[18] == 0 && bytes[19] == 176,
         "control golden payload size");
     Expect(bytes[48] == 0x3F && bytes[49] == 0xF0, "control golden binary64");
 
@@ -79,7 +79,7 @@ void TestCodec()
     Expect(!protocol::decodeControl(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
         "wrong magic rejected");
     invalid = bytes;
-    invalid[5] = 3;
+    invalid[5] = 2;
     Expect(!protocol::decodeControl(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
         "wrong version rejected");
     Expect(!protocol::decodeControl(bytes.data(), bytes.size() - 1, decodedHeader, decoded, &error),
@@ -94,7 +94,7 @@ void TestCodec()
     Expect(!protocol::decodeControl(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
         "non-zero header reserved rejected");
     invalid = bytes;
-    invalid[130] = 1;
+    invalid[218] = 1;
     Expect(!protocol::decodeControl(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
         "non-zero control reserved rejected");
 
@@ -118,7 +118,7 @@ void TestFullStatus()
     status.runtime.active_source = protocol::Source::Cloud;
     status.beckhoff_common.values[0] = 12.5;
     status.raw_io.encoders[4] = 42;
-    status.ercp_feedback.values[11] = -3.25;
+    status.ercp_feedback.operator_position = 0.75;
     status.applied_command.latest_write_attempt.command = SampleControl();
     status.applied_command.latest_write_attempt.source = protocol::Source::Cloud;
     status.applied_command.latest_write_attempt.result = protocol::ApplyResult::Succeeded;
@@ -136,7 +136,7 @@ void TestFullStatus()
     std::string error;
     Expect(protocol::encodeFullStatus(header, status, bytes, &error),
         "full status encodes without linking an ADS driver");
-    Expect(bytes.size() == 1024, "full status wire size is 1024");
+    Expect(bytes.size() == 1200, "full status wire size is 1200");
     Expect(bytes.size() <= protocol::kMaxPacketSize, "full status is within 1200-byte limit");
 
     protocol::Header decodedHeader;
@@ -147,15 +147,15 @@ void TestFullStatus()
         "full status metadata round-trip");
     Expect(decoded.beckhoff_common.values[0] == 12.5
             && decoded.raw_io.encoders[4] == 42
-            && decoded.ercp_feedback.values[11] == -3.25,
+            && decoded.ercp_feedback.operator_position == 0.75,
         "full status business groups round-trip");
 
     auto overlappingErcpFlags = bytes;
-    constexpr std::size_t kErcpFlagsOffset = 480;
-    overlappingErcpFlags[kErcpFlagsOffset + 1] = 1u << 3;
+    constexpr std::size_t kErcpFlagsOffset = 496;
+    overlappingErcpFlags[kErcpFlagsOffset + 1] = 1u << 5;
     Expect(!protocol::decodeFullStatus(overlappingErcpFlags.data(),
                overlappingErcpFlags.size(), decodedHeader, decoded, &error),
-        "overlapping ERCP total-error flags are rejected");
+        "unknown ERCP flags are rejected");
 
     status.beckhoff_common.move_state = static_cast<protocol::BeckhoffMoveState>(0xF1234567u);
     status.ercp_state.type = static_cast<protocol::ErcpDeviceType>(-101);
@@ -364,6 +364,12 @@ protocol::ControlPayload GoldenControlPayload()
         payload.values[i] = static_cast<double>(i) + 0.5;
     }
     payload.switches = 0x002A;
+    payload.ercp_switches = 0x0015;
+    payload.robot_action = 3;
+    for (std::size_t i = 0; i < payload.ercp_6d.size(); ++i) payload.ercp_6d[i] = i + 10.5;
+    payload.inject_velocity = { 0.1, 0.5 };
+    payload.inject_position = { 0.25, 0.75 };
+    payload.inject_enables = 1;
     return payload;
 }
 
@@ -390,6 +396,11 @@ protocol::FullStatusPayload GoldenStatusPayload()
     s.beckhoff_common.move_state = protocol::BeckhoffMoveState::Following;
     s.beckhoff_common.output_switches = 0x0005;
     s.beckhoff_common.power_level = static_cast<std::int16_t>(PU(118));
+    s.beckhoff_common.prepare_state = 1;
+    s.beckhoff_common.error_flags = 1;
+    s.beckhoff_common.drive_errors = 0x200001;
+    s.beckhoff_common.motor_errors = 0x40001;
+    s.beckhoff_common.scope_type = 2;
     for (std::size_t j = 0; j < 36; ++j) s.beckhoff_common.values[j] = PF(120 + 8 * j);
     for (std::size_t j = 0; j < 5; ++j) {
         s.raw_io.encoders[j] = static_cast<std::int32_t>(PU(424 + 4 * j));
@@ -400,11 +411,19 @@ protocol::FullStatusPayload GoldenStatusPayload()
     s.ercp_state.flags = 0x0003;
     s.ercp_state.drive_errors = static_cast<std::uint16_t>(PU(484));
     s.ercp_state.motor_errors = static_cast<std::uint16_t>(PU(486));
-    s.ercp_state.type = protocol::ErcpDeviceType::Basket;
+    s.ercp_state.type = protocol::ErcpDeviceType::StoneBasket;
     s.ercp_state.move_status = protocol::ErcpMoveState::Opened;
-    for (std::size_t j = 0; j < 12; ++j) s.ercp_feedback.values[j] = PF(520 + 8 * j);
+    s.ercp_feedback.ercp_deliver_force = 1.25;
+    s.ercp_feedback.guide_wire_force = 2.25;
+    s.ercp_feedback.bow_force = 3.25;
+    s.ercp_feedback.ercp_deliver_position = 4.25;
+    s.ercp_feedback.guide_wire_position = 5.25;
+    s.ercp_feedback.inject_current_position_01 = 0.25;
+    s.ercp_feedback.inject_current_position_02 = 0.75;
     s.ercp_feedback.inject_state_01 = protocol::InjectorState::Injecting;
     s.ercp_feedback.inject_state_02 = protocol::InjectorState::Completed;
+    s.ercp_feedback.balloon_pressure = 123;
+    s.ercp_feedback.operator_position = 0.625;
     auto &r0 = s.applied_command.latest_write_attempt;
     for (std::size_t j = 0; j < 10; ++j) r0.command.values[j] = PF(640 + 8 * j);
     r0.command.switches = 0x002A;
@@ -467,11 +486,11 @@ void ExpectBytesEqual(const protocol::Bytes &actual, const protocol::Bytes &gold
 void TestGoldenControlFixture()
 {
     std::string path;
-    const auto golden = LoadGoldenHex("robot_control_152.hex", path);
-    Expect(!golden.empty(), "robot_control_152.hex fixture found");
+    const auto golden = LoadGoldenHex("robot_control_224.hex", path);
+    Expect(!golden.empty(), "robot_control_224.hex fixture found");
     if (golden.empty()) return;
     std::cout << "golden control fixture: " << path << '\n';
-    Expect(golden.size() == 152, "control golden is 152 bytes");
+    Expect(golden.size() == 224, "control golden is 224 bytes");
 
     protocol::Bytes encoded;
     std::string error;
@@ -497,11 +516,11 @@ void TestGoldenControlFixture()
 void TestGoldenStatusFixture()
 {
     std::string path;
-    const auto golden = LoadGoldenHex("robot_status_1024.hex", path);
-    Expect(!golden.empty(), "robot_status_1024.hex fixture found");
+    const auto golden = LoadGoldenHex("robot_status_1200.hex", path);
+    Expect(!golden.empty(), "robot_status_1200.hex fixture found");
     if (golden.empty()) return;
     std::cout << "golden status fixture: " << path << '\n';
-    Expect(golden.size() == 1024, "status golden is 1024 bytes");
+    Expect(golden.size() == 1200, "status golden is 1200 bytes");
 
     const auto fixture = GoldenStatusPayload();
     protocol::Bytes encoded;
@@ -541,7 +560,8 @@ void TestGoldenStatusFixture()
             && decoded.ercp_state.type == fixture.ercp_state.type
             && decoded.ercp_state.move_status == fixture.ercp_state.move_status,
         "golden status ERCP state group matches the fixed input");
-    Expect(decoded.ercp_feedback.values == fixture.ercp_feedback.values
+    Expect(decoded.ercp_feedback.bow_force == fixture.ercp_feedback.bow_force
+            && decoded.ercp_feedback.operator_position == fixture.ercp_feedback.operator_position
             && decoded.ercp_feedback.inject_state_01 == fixture.ercp_feedback.inject_state_01
             && decoded.ercp_feedback.inject_state_02 == fixture.ercp_feedback.inject_state_02,
         "golden status ERCP feedback group matches the fixed input");

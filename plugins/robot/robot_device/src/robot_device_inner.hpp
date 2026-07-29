@@ -36,6 +36,8 @@ namespace ercp {
         // 跟随数据
         std::uint32_t BeckhoffFollowDataResult(
             unsigned long length, const void *data) const override;
+        std::uint32_t BeckhoffGoldDiscreteCommandResult(
+            const device::beckhoff::GoldDiscreteCommand &command) const override;
         bool BeckhoffArmOperation(beckhoff_arm_operation iArmOper)const override;
         bool BeckhoffReadAsexPos(double asex_pos[19])const override;
         double BeckhoffForce(INT16 iPos)const override;

@@ -554,6 +554,11 @@ namespace ercp {
             static_cast<protocol::v2::BeckhoffMoveState>(snapshot.move_state);
         status.beckhoff_common.output_switches = snapshot.output_switches;
         status.beckhoff_common.power_level = snapshot.power_level;
+        status.beckhoff_common.prepare_state = snapshot.prepare_state;
+        status.beckhoff_common.error_flags = snapshot.error_flags;
+        status.beckhoff_common.drive_errors = snapshot.drive_errors;
+        status.beckhoff_common.motor_errors = snapshot.motor_errors;
+        status.beckhoff_common.scope_type = snapshot.scope_type;
         status.beckhoff_common.values = snapshot.common_values;
         status.raw_io.encoders = snapshot.encoders;
         status.raw_io.sensors = snapshot.sensors;
@@ -563,11 +568,19 @@ namespace ercp {
         status.ercp_state.type = static_cast<protocol::v2::ErcpDeviceType>(snapshot.ercp_type);
         status.ercp_state.move_status =
             static_cast<protocol::v2::ErcpMoveState>(snapshot.ercp_move_status);
-        status.ercp_feedback.values = snapshot.ercp_feedback;
+        status.ercp_feedback.ercp_deliver_force = snapshot.ercp_deliver_force;
+        status.ercp_feedback.guide_wire_force = snapshot.guide_wire_force;
+        status.ercp_feedback.bow_force = snapshot.bow_force;
+        status.ercp_feedback.ercp_deliver_position = snapshot.ercp_deliver_position;
+        status.ercp_feedback.guide_wire_position = snapshot.guide_wire_position;
+        status.ercp_feedback.inject_current_position_01 = snapshot.inject_current_position_01;
+        status.ercp_feedback.inject_current_position_02 = snapshot.inject_current_position_02;
         status.ercp_feedback.inject_state_01 =
             static_cast<protocol::v2::InjectorState>(snapshot.inject_state_01);
         status.ercp_feedback.inject_state_02 =
             static_cast<protocol::v2::InjectorState>(snapshot.inject_state_02);
+        status.ercp_feedback.balloon_pressure = snapshot.balloon_pressure;
+        status.ercp_feedback.operator_position = snapshot.operator_position;
         const auto applied_commands = AppliedCommands();
         status.applied_command = applied_commands;
 
@@ -594,9 +607,16 @@ namespace ercp {
                 status.ads_diagnostics.stale_groups |= device::beckhoff::SnapshotCommon;
             }
         }
-        for (double &value : status.ercp_feedback.values) {
-            if (!std::isfinite(value)) {
-                value = 0;
+        double *ercpValues[] = {&status.ercp_feedback.ercp_deliver_force,
+            &status.ercp_feedback.guide_wire_force, &status.ercp_feedback.bow_force,
+            &status.ercp_feedback.ercp_deliver_position,
+            &status.ercp_feedback.guide_wire_position,
+            &status.ercp_feedback.inject_current_position_01,
+            &status.ercp_feedback.inject_current_position_02,
+            &status.ercp_feedback.operator_position};
+        for (double *value : ercpValues) {
+            if (!std::isfinite(*value)) {
+                *value = 0;
                 status.ads_diagnostics.stale_groups |= device::beckhoff::SnapshotErcpFeedback;
             }
         }

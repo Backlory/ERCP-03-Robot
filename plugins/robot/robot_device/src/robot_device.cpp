@@ -115,6 +115,12 @@ namespace ercp {
         return beckhoff::Beckhoff_Motor::GetInstance().FollowOperationDataResult(length, data);
     }
 
+    std::uint32_t _RobotDevice::BeckhoffGoldDiscreteCommandResult(
+        const device::beckhoff::GoldDiscreteCommand &command) const
+    {
+        return beckhoff::Beckhoff_Motor::GetInstance().GoldDiscreteCommandResult(command);
+    }
+
     bool _RobotDevice::BeckhoffArmOperation(beckhoff_arm_operation iArmOper)const {
         return beckhoff::Beckhoff_Motor::GetInstance().ArmOperation(iArmOper);
     }

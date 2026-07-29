@@ -21,11 +21,11 @@ namespace ercp {
     }
 
     static protocol::v2::ControlPayload applied_control(
-        const beckhoff_follow_cmd &follow_cmd)
+        const beckhoff_follow_cmd &follow_cmd, const protocol::v2::ControlPayload &requested)
     {
         using protocol::v2::ControlValueIndex;
         using protocol::v2::controlIndex;
-        protocol::v2::ControlPayload applied;
+        protocol::v2::ControlPayload applied = requested;
         applied.values[controlIndex(ControlValueIndex::FollowCompensation)] =
             follow_cmd.follow_comp_botton;
         applied.values[controlIndex(ControlValueIndex::ScopeMove)] = follow_cmd.vel_move;
@@ -109,27 +109,30 @@ namespace ercp {
         }
         m_command_fresh = fresh;
 
-        //写入是否操作ERCP
-        bool ercp_online = robot.BeckhoffIsERCPOnline();
-        bool ercp_ready = robot.BeckhoffIsERCPReady();
-        static bool bERCPOnline = ercp_online;
-        static bool bERCPReady = false;
-        if (ercp_online != bERCPOnline) {
-            if (!ercp_online)
-                robot.BeckhoffERCPOperateState(false);
-            else if (ercp_ready)
-                robot.BeckhoffERCPOperateState(true);
-        } else if (ercp_online && ercp_ready != bERCPReady) {
-            robot.BeckhoffERCPOperateState(ercp_ready);
-        }
-        bERCPOnline = ercp_online;
-        bERCPReady = ercp_ready;
-
         // 只在此处将网络控制字映射为 PLC native 10+6。
         beckhoff_follow_cmd follow_cmd;
         build_follow_cmd(command, follow_cmd);
         const auto appliedAt = robot_udp_v2::UnixNowNs();
-        const auto adsError = robot.BeckhoffFollowDataResult(sizeof(follow_cmd), &follow_cmd);
+        auto adsError = robot.BeckhoffFollowDataResult(sizeof(follow_cmd), &follow_cmd);
+        device::beckhoff::GoldDiscreteCommand discrete;
+        discrete.robot_action = command.robot_action;
+        const bool ercpAllowed = fresh
+            && robot.BeckhoffIsERCPOnline() && robot.BeckhoffIsERCPReady();
+        discrete.operate = ercpAllowed && (command.ercp_switches & (1u << 0)) != 0;
+        discrete.cooperate = ercpAllowed && (command.ercp_switches & (1u << 1)) != 0;
+        for (std::size_t i = 0; i < 6; ++i)
+            discrete.handle_6d[i] = ercpAllowed ? command.ercp_6d[i] : 0.0;
+        discrete.buttons[0] = ercpAllowed && (command.ercp_switches & (1u << 2)) != 0;
+        discrete.buttons[1] = ercpAllowed && (command.ercp_switches & (1u << 3)) != 0;
+        discrete.buttons[2] = ercpAllowed && (command.ercp_switches & (1u << 4)) != 0;
+        for (std::size_t i = 0; i < 2; ++i) {
+            discrete.inject_velocity[i] = ercpAllowed ? command.inject_velocity[i] : 0.0;
+            discrete.inject_position[i] = ercpAllowed ? command.inject_position[i] : 0.0;
+            discrete.inject_enable[i] =
+                ercpAllowed && (command.inject_enables & (1u << i)) != 0;
+        }
+        const auto discreteError = robot.BeckhoffGoldDiscreteCommandResult(discrete);
+        if (adsError == 0) adsError = discreteError;
         const bool succeeded = adsError == 0;
         // A timeout describes a successfully written safety-zero command. If the
         // ADS write itself fails, the wire status must report that failure first.
@@ -138,7 +141,7 @@ namespace ercp {
             : (fresh ? protocol::v2::ApplyResult::Succeeded
                      : protocol::v2::ApplyResult::TimedOutToZero);
         // 状态中的历史命令必须等于实际交给 ADS 的 10+6，而不是限幅前的网络原值。
-        const auto appliedCommand = applied_control(follow_cmd);
+        const auto appliedCommand = applied_control(follow_cmd, command);
         m_applied_commands.MarkAttempt(
             appliedCommand, metadata, result, adsError, appliedAt, succeeded);
     }

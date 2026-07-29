@@ -19,6 +19,17 @@ enum SnapshotGroup : std::uint8_t {
     SnapshotErcpFeedback = 1u << 3,
 };
 
+struct GoldDiscreteCommand {
+    int robot_action = -1;
+    bool operate = false;
+    bool cooperate = false;
+    double handle_6d[6]{};
+    bool buttons[3]{};
+    double inject_velocity[2]{};
+    double inject_position[2]{};
+    bool inject_enable[2]{};
+};
+
 struct BeckhoffSnapshot {
     std::uint64_t sequence = 0;
     std::uint64_t poll_started_unix_ns = 0;
@@ -38,6 +49,11 @@ struct BeckhoffSnapshot {
     std::uint32_t move_state = 0;
     std::uint16_t output_switches = 0;
     std::int16_t power_level = 0;
+    std::uint8_t prepare_state = 0;
+    std::uint8_t error_flags = 0;
+    std::uint32_t drive_errors = 0;
+    std::uint32_t motor_errors = 0;
+    std::int32_t scope_type = 0;
     std::array<double, 36> common_values{};
 
     std::array<std::int32_t, 5> encoders{};
@@ -49,9 +65,17 @@ struct BeckhoffSnapshot {
     std::int32_t ercp_type = 0;
     std::int32_t ercp_move_status = 0;
 
-    std::array<double, 12> ercp_feedback{};
+    double ercp_deliver_force = 0;
+    double guide_wire_force = 0;
+    double bow_force = 0;
+    double ercp_deliver_position = 0;
+    double guide_wire_position = 0;
+    double inject_current_position_01 = 0;
+    double inject_current_position_02 = 0;
     std::int32_t inject_state_01 = 0;
     std::int32_t inject_state_02 = 0;
+    std::int16_t balloon_pressure = 0;
+    double operator_position = 0;
 
     // Common, raw IO, ERCP state, and ERCP feedback sample times.
     std::array<std::uint64_t, 4> sampled_at_unix_ns{};
