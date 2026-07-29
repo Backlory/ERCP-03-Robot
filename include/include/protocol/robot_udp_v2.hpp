@@ -47,7 +47,7 @@ enum class Source : std::uint16_t {
 enum class GroupId : std::uint16_t {
     RobotRuntime = 1,
     BeckhoffCommon = 2,
-    RawIo = 3,
+    Reserved = 3,
     ErcpState = 4,
     ErcpFeedback = 5,
     AppliedCommand = 6,
@@ -208,11 +208,6 @@ struct BeckhoffCommonPayload {
     std::array<double, 36> values{};
 };
 
-struct RawIoPayload {
-    std::array<std::int32_t, 5> encoders{};
-    std::array<std::int16_t, 7> sensors{};
-};
-
 struct ErcpStatePayload {
     std::uint16_t flags = 0;
     std::uint16_t drive_errors = 0;
@@ -262,7 +257,7 @@ struct AdsDiagnosticsPayload {
     std::uint32_t consecutive_failed_polls = 0;
     std::uint32_t overall_ads_error = 0;
     std::uint32_t common_ads_error = 0;
-    std::uint32_t raw_io_ads_error = 0;
+    std::uint32_t reserved_ads_error = 0;
     std::uint32_t ercp_state_ads_error = 0;
     std::uint32_t ercp_feedback_ads_error = 0;
     std::uint32_t command_write_ads_error = 0;
@@ -271,7 +266,6 @@ struct AdsDiagnosticsPayload {
 struct FullStatusPayload {
     RobotRuntimePayload runtime;
     BeckhoffCommonPayload beckhoff_common;
-    RawIoPayload raw_io;
     ErcpStatePayload ercp_state;
     ErcpFeedbackPayload ercp_feedback;
     AppliedCommandPayload applied_command;
@@ -501,7 +495,7 @@ inline std::size_t knownGroupSize(std::uint16_t id)
     switch (static_cast<GroupId>(id)) {
     case GroupId::RobotRuntime: return 24;
     case GroupId::BeckhoffCommon: return 312;
-    case GroupId::RawIo: return 40;
+    case GroupId::Reserved: return 40;
     case GroupId::ErcpState: return 24;
     case GroupId::ErcpFeedback: return 80;
     case GroupId::AppliedCommand: return 448;
@@ -551,10 +545,10 @@ inline bool validKnownGroup(const StatusGroup &group, std::string *error)
             }
         }
         return true;
-    case GroupId::RawIo:
-        return allZero(group.payload, 34, 6)
+    case GroupId::Reserved:
+        return allZero(group.payload, 0, group.payload.size())
             ? true
-            : fail(error, "non-zero raw IO reserved data");
+            : fail(error, "non-zero reserved status group");
     case GroupId::ErcpState:
         if ((be16(group.payload, 0) & ~0x001Fu) != 0 || be16(group.payload, 2) != 0
             || (be16(group.payload, 4) & ~0x1FFFu) != 0
@@ -594,8 +588,8 @@ inline bool validKnownGroup(const StatusGroup &group, std::string *error)
         }
         return true;
     case GroupId::AdsDiagnostics:
-        if (group.payload[32] > 3 || (group.payload[33] & ~0x0Fu) != 0
-            || (group.payload[34] & ~0x0Fu) != 0 || group.payload[35] != 0) {
+        if (group.payload[32] > 3 || (group.payload[33] & ~0x0Du) != 0
+            || (group.payload[34] & ~0x0Du) != 0 || group.payload[35] != 0) {
             return fail(error, "invalid ADS diagnostics flags");
         }
         return true;
@@ -908,14 +902,9 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
     }
     groups.push_back(detail::group(GroupId::BeckhoffCommon, status.sampled_at_unix_ns[1], std::move(bytes)));
 
-    bytes.clear();
-    {
-        detail::Writer writer(bytes);
-        for (std::int32_t value : status.raw_io.encoders) writer.i32(value);
-        for (std::int16_t value : status.raw_io.sensors) writer.i16(value);
-        for (int i = 0; i < 6; ++i) writer.u8(0);
-    }
-    groups.push_back(detail::group(GroupId::RawIo, status.sampled_at_unix_ns[2], std::move(bytes)));
+    bytes.assign(40, 0);
+    groups.push_back(
+        detail::group(GroupId::Reserved, status.sampled_at_unix_ns[2], std::move(bytes)));
 
     bytes.clear();
     {
@@ -970,7 +959,7 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
         writer.u32(status.ads_diagnostics.consecutive_failed_polls);
         writer.u32(status.ads_diagnostics.overall_ads_error);
         writer.u32(status.ads_diagnostics.common_ads_error);
-        writer.u32(status.ads_diagnostics.raw_io_ads_error);
+        writer.u32(status.ads_diagnostics.reserved_ads_error);
         writer.u32(status.ads_diagnostics.ercp_state_ads_error);
         writer.u32(status.ads_diagnostics.ercp_feedback_ads_error);
         writer.u32(status.ads_diagnostics.command_write_ads_error);
@@ -1033,12 +1022,11 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
             return true;
         })) return detail::fail(error, "cannot parse Beckhoff common group");
 
-    if (!parseGroup(GroupId::RawIo, [&](detail::Reader &reader) {
-            for (std::int32_t &value : parsed.raw_io.encoders) if (!reader.i32(value)) return false;
-            for (std::int16_t &value : parsed.raw_io.sensors) if (!reader.i16(value)) return false;
+    if (!parseGroup(GroupId::Reserved, [&](detail::Reader &reader) {
             Bytes reserved;
-            return reader.copy(reserved, 6);
-        })) return detail::fail(error, "cannot parse raw IO group");
+            return reader.copy(reserved, reader.remaining())
+                && detail::allZero(reserved, 0, reserved.size());
+        })) return detail::fail(error, "cannot parse reserved status group");
 
     if (!parseGroup(GroupId::ErcpState, [&](detail::Reader &reader) {
             std::uint16_t reserved16 = 0;
@@ -1091,7 +1079,7 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
                 || !reader.u32(parsed.ads_diagnostics.consecutive_failed_polls)
                 || !reader.u32(parsed.ads_diagnostics.overall_ads_error)
                 || !reader.u32(parsed.ads_diagnostics.common_ads_error)
-                || !reader.u32(parsed.ads_diagnostics.raw_io_ads_error)
+                || !reader.u32(parsed.ads_diagnostics.reserved_ads_error)
                 || !reader.u32(parsed.ads_diagnostics.ercp_state_ads_error)
                 || !reader.u32(parsed.ads_diagnostics.ercp_feedback_ads_error)
                 || !reader.u32(parsed.ads_diagnostics.command_write_ads_error)) return false;

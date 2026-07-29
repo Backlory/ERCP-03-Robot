@@ -36,13 +36,19 @@ V2/V3 混部会被双方的严格解码器拒绝。
 
 因此 Robot 必须保持以下边界：
 
-- `MAIN.Info_Feedback_ToMaster` 保持 304B；
+- 当前在线机器人 PLC 的 `MAIN.Info_Feedback_ToMaster` 为 320B，其中
+  `Axes_Pos` 为 21 路；Robot ADS 侧完整读取 21 路，V3 UDP 为兼容固定布局仍发送前 19 路；
 - `MAIN_ERCP.ERCP_Info_Feedback_ToMaster` 保持 104B 旧布局；
 - `DriveErrorState_ERCP` 和 `MotorErrorState_ERCP` 分别按 14、12 个 `BOOL` 读取；
 - 公共状态有效性只依赖原有
   `MAIN.Status_Feedback_ToMaster` 和 `MAIN.Info_Feedback_ToMaster`；
 - 连续控制仍只写生产快照已有的 `MAIN.Follow_Control_Cmd`（88B）；
 - Robot action 只写生产快照已有的 `MAIN.Status_Command_FromMaster`；
+- 金标准不定义旧版 `MAIN.IEncoder`/`MAIN.ISensor`，Robot 不得查询这些符号。
+  为保持 V3 的 8 组/1200B 线格式，第 3 组改为固定全零的保留组；
+- `MAIN_ERCP.*` 属于可选的独立 ERCP 台车；Robot 在 ADS 建连时只读探测
+  `MAIN_ERCP.ERCP_Info_Feedback_ToMaster`。符号不存在时自动视为台车未接入，
+  不轮询或写入该组，也不因此将机器人 ADS 连接标记为 degraded；
 - ERCP operate 保留原有 online/ready 状态迁移写入
   `MAIN_ERCP.bERCP_Operate_State_FromMaster`。
 

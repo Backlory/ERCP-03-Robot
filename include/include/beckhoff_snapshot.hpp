@@ -14,7 +14,7 @@ enum class SnapshotConnectionState : std::uint8_t {
 
 enum SnapshotGroup : std::uint8_t {
     SnapshotCommon = 1u << 0,
-    SnapshotRawIo = 1u << 1,
+    // Bit 1 is reserved by the fixed Robot UDP V3 layout.
     SnapshotErcpState = 1u << 2,
     SnapshotErcpFeedback = 1u << 3,
 };
@@ -44,7 +44,6 @@ struct BeckhoffSnapshot {
     std::uint32_t consecutive_failed_polls = 0;
     std::uint32_t overall_ads_error = 0;
     std::uint32_t common_ads_error = 0;
-    std::uint32_t raw_io_ads_error = 0;
     std::uint32_t ercp_state_ads_error = 0;
     std::uint32_t ercp_feedback_ads_error = 0;
     std::uint32_t command_write_ads_error = 0;
@@ -58,9 +57,6 @@ struct BeckhoffSnapshot {
     std::uint32_t motor_errors = 0;
     std::int32_t scope_type = 0;
     std::array<double, 36> common_values{};
-
-    std::array<std::int32_t, 5> encoders{};
-    std::array<std::int16_t, 7> sensors{};
 
     std::uint16_t ercp_flags = 0;
     std::uint16_t ercp_drive_errors = 0;
@@ -80,7 +76,7 @@ struct BeckhoffSnapshot {
     std::int16_t balloon_pressure = 0;
     double operator_position = 0;
 
-    // Common, raw IO, ERCP state, and ERCP feedback sample times.
+    // Common, reserved V3 slot, ERCP state, and ERCP feedback sample times.
     std::array<std::uint64_t, 4> sampled_at_unix_ns{};
 };
 

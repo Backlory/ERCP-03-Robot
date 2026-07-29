@@ -54,7 +54,9 @@ namespace device { namespace beckhoff {
 
             double Follow_Force; //跟随力/N
 
-            double Asex_Pos[19]; // 19个轴的信息
+            // The online robot PLC exposes ARRAY[1..21] OF LREAL. The V3 UDP
+            // contract still carries the first 19 axes for wire compatibility.
+            double Asex_Pos[21];
         };
         struct ERCPFeedbackData {
             double Deliver_Force; //器械输送力
@@ -81,7 +83,7 @@ namespace device { namespace beckhoff {
 
         // These types are ADS wire layouts. Keep them byte-for-byte compatible
         // with the production TwinCAT structures represented by beckhoff-GT.
-        static_assert(sizeof(FeedbackData) == 304,
+        static_assert(sizeof(FeedbackData) == 320,
             "FeedbackData must match MAIN.Info_Feedback_ToMaster");
         static_assert(offsetof(FeedbackData, Follow_Length) == 0, "FeedbackData ABI drift");
         static_assert(offsetof(FeedbackData, Switch_Water) == 8, "FeedbackData ABI drift");
@@ -141,8 +143,6 @@ namespace device { namespace beckhoff {
         // 获取信息
         bool ReadAsexPos(double dAsex_Pos[19]);
 
-        bool Encoder(INT32 data[5]);
-        bool Sensor(INT16 data[7]);
         beckhoff_arm_move_state MoveState();
 
         double Follow_Length();
@@ -208,6 +208,7 @@ namespace device { namespace beckhoff {
         // 是否打开连接
         std::atomic<bool> m_bIsOpen{false};
         bool m_port_open = false;
+        bool m_ercp_available = false;
 
         // 倍福地址
         AmsAddr m_Addr;

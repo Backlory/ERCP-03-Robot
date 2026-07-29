@@ -176,9 +176,10 @@ PLC move state 当前具名值：Initial=0、Folding=10、Folded=11、Opening=20
 Following=30、Followed=31。线类型始终是 `uint32`；
 接收端不得因为值不在当前名称表中而拒绝或改写它。
 
-### 5.3 RawIoGroup (ID=3, version=1, size=40)
+### 5.3 ReservedGroup (ID=3, version=1, size=40)
 
-Offset 0 为 `int32 IEncoder[5]`，offset 20 为 `int16 ISensor[7]`，offset 34 的 6 个 reserved
+全部 40 字节必须为零。早期草案曾将本组定义为 `IEncoder`/`ISensor`，
+但 Beckhoff 金标准没有这些接口；V3 为保持 8 组、1200B 兼容布局而保留本组。
 字节必须为 0。
 
 ### 5.4 ErcpStateGroup (ID=4, version=1, size=24)
@@ -231,13 +232,13 @@ Succeeded=2, Failed=3, Rejected=4, TimedOutToZero=5。
 | 16 | `uint64` | poll complete Unix ns |
 | 24 | `uint64` | snapshot publish Unix ns |
 | 32 | `uint8 enum` | Disconnected=0, Connecting=1, Running=2, Degraded=3 |
-| 33 | `uint8 bitmask` | valid：common/raw IO/ERCP state/ERCP feedback bits 0..3 |
+| 33 | `uint8 bitmask` | valid：common/保留/ERCP state/ERCP feedback bits 0..3；bit1 必须为 0 |
 | 34 | `uint8 bitmask` | stale：同上 |
 | 35 | `uint8` | reserved，必须为 0 |
 | 36 | `uint32` | consecutive failed polls |
 | 40 | `uint32` | overall ADS error |
 | 44 | `uint32` | common ADS error |
-| 48 | `uint32` | raw IO ADS error |
+| 48 | `uint32` | 保留，必须为 0 |
 | 52 | `uint32` | ERCP state ADS error |
 | 56 | `uint32` | ERCP feedback ADS error |
 | 60 | `uint32` | latest command write ADS error |

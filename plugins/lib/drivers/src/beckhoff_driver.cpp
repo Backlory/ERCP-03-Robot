@@ -39,6 +39,7 @@ namespace device { namespace beckhoff {
     {
         if (IsOpen()) return true;
         CloseConn();
+        m_ercp_available = false;
 
         {
             std::lock_guard<std::mutex> lock(m_snapshot_mutex);
@@ -102,6 +103,11 @@ namespace device { namespace beckhoff {
             }
         }
         m_bIsOpen.store(true, std::memory_order_release);
+        // MAIN_ERCP is an optional, separate cart. Detect its PLC interface
+        // read-only at connection time; it is not a deployment switch.
+        ERCPFeedbackData ercpProbe{};
+        m_ercp_available = ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster",
+            sizeof(ercpProbe), &ercpProbe) == ADSERR_NOERR;
         m_StateUpdate_Thread
             = boost::make_shared<boost::thread>(&Beckhoff_Motor::StateUpdateThread, this);
         return true;
@@ -271,25 +277,6 @@ namespace device { namespace beckhoff {
         return true;
     }
     // 读取编码
-    bool Beckhoff_Motor::Encoder(INT32 data[5])
-    {
-        const auto snapshot = Snapshot();
-        for (int i = 0; i < 5; i++) {
-            data[i] = snapshot.encoders[i];
-        }
-        return true;
-    }
-
-    // 读取传感�?
-    bool Beckhoff_Motor::Sensor(INT16 data[7])
-    {
-        const auto snapshot = Snapshot();
-        for (int i = 0; i < 7; i++) {
-            data[i] = snapshot.sensors[i];
-        }
-        return true;
-    }
-
     bool Beckhoff_Motor::ERCPOperateState(bool state) // true = 操作中、False = 未操�?
     {
         return WriteData("MAIN_ERCP.bERCP_Operate_State_FromMaster", sizeof(state), &state)
@@ -430,7 +417,10 @@ namespace device { namespace beckhoff {
                 next.common_values[14] = feedback.Deliver_force;
                 next.common_values[15] = feedback.Rotate_Deqree;
                 next.common_values[16] = feedback.Follow_Force;
-                std::copy(std::begin(feedback.Asex_Pos), std::end(feedback.Asex_Pos),
+                // V3 wire compatibility: publish the first 19 of the PLC's 21
+                // axes. The two additional axes are read to satisfy the ADS ABI
+                // but are not silently appended to the fixed-size UDP group.
+                std::copy_n(std::begin(feedback.Asex_Pos), 19,
                     next.common_values.begin() + 17);
                 next.valid_groups |= SnapshotCommon;
                 next.stale_groups &= static_cast<std::uint8_t>(~SnapshotCommon);
@@ -439,102 +429,100 @@ namespace device { namespace beckhoff {
                 next.stale_groups |= SnapshotCommon;
             }
 
-            std::array<INT32, 5> encoders{};
-            std::array<INT16, 7> sensors{};
-            std::uint32_t rawIoError = ADSERR_NOERR;
-            KeepFirstError(rawIoError,
-                ReadData("MAIN.IEncoder", sizeof(encoders), encoders.data()));
-            KeepFirstError(rawIoError,
-                ReadData("MAIN.ISensor", sizeof(sensors), sensors.data()));
-            next.raw_io_ads_error = rawIoError;
-            KeepFirstError(next.overall_ads_error, rawIoError);
-            if (rawIoError == ADSERR_NOERR) {
-                std::copy(encoders.begin(), encoders.end(), next.encoders.begin());
-                std::copy(sensors.begin(), sensors.end(), next.sensors.begin());
-                next.valid_groups |= SnapshotRawIo;
-                next.stale_groups &= static_cast<std::uint8_t>(~SnapshotRawIo);
-                next.sampled_at_unix_ns[1] = UnixNowNs();
-            } else {
-                next.stale_groups |= SnapshotRawIo;
-            }
+            if (m_ercp_available) {
+                bool ercpOnline = false;
+                bool ercpReady = false;
+                bool driveError = false;
+                bool driveErrors[14]{};
+                bool motorError = false;
+                bool motorErrors[12]{};
+                int ercpType = 0;
+                int ercpMoveStatus = 0;
+                bool loadDirection = false;
+                std::uint32_t ercpStateError = ADSERR_NOERR;
+                KeepFirstError(ercpStateError, ReadData(
+                    "MAIN.ERCP_Online_flag", sizeof(ercpOnline), &ercpOnline));
+                KeepFirstError(ercpStateError, ReadData(
+                    "POU_Ercp_CycleExecute.Ercp_Ready_State", sizeof(ercpReady), &ercpReady));
+                KeepFirstError(ercpStateError, ReadData(
+                    "MAIN_ERCP.bErro_State_Drive_ERCP", sizeof(driveError), &driveError));
+                KeepFirstError(ercpStateError, ReadData(
+                    "MAIN_ERCP.DriveErrorState_ERCP", sizeof(driveErrors), driveErrors));
+                KeepFirstError(ercpStateError, ReadData(
+                    "MAIN_ERCP.bErro_State_Motor_ERCP", sizeof(motorError), &motorError));
+                KeepFirstError(ercpStateError, ReadData(
+                    "MAIN_ERCP.MotorErrorState_ERCP", sizeof(motorErrors), motorErrors));
+                KeepFirstError(ercpStateError,
+                    ReadData("MAIN_ERCP.type_of_ERCP", sizeof(ercpType), &ercpType));
+                KeepFirstError(ercpStateError, ReadData(
+                    "MAIN_ERCP.ERCP_Status_Feedback_ToMaster",
+                    sizeof(ercpMoveStatus), &ercpMoveStatus));
+                KeepFirstError(ercpStateError, ReadData(
+                    "MAIN_ERCP.bERCP_Load_Exchange_Dir", sizeof(loadDirection), &loadDirection));
+                next.ercp_state_ads_error = ercpStateError;
+                KeepFirstError(next.overall_ads_error, ercpStateError);
+                if (ercpStateError == ADSERR_NOERR) {
+                    next.ercp_flags = static_cast<std::uint16_t>(
+                        (ercpOnline ? 1u << 0 : 0u)
+                        | (ercpReady ? 1u << 1 : 0u)
+                        | (loadDirection ? 1u << 2 : 0u)
+                        | (driveError ? 1u << 3 : 0u)
+                        | (motorError ? 1u << 4 : 0u));
+                    next.ercp_drive_errors = 0;
+                    for (std::size_t i = 0; i < std::size(driveErrors); ++i) {
+                        if (driveErrors[i])
+                            next.ercp_drive_errors |= static_cast<std::uint16_t>(1u << i);
+                    }
+                    next.ercp_motor_errors = 0;
+                    for (std::size_t i = 0; i < std::size(motorErrors); ++i) {
+                        if (motorErrors[i])
+                            next.ercp_motor_errors |= static_cast<std::uint16_t>(1u << i);
+                    }
+                    next.ercp_type = ercpType;
+                    next.ercp_move_status = ercpMoveStatus;
+                    next.valid_groups |= SnapshotErcpState;
+                    next.stale_groups &= static_cast<std::uint8_t>(~SnapshotErcpState);
+                    next.sampled_at_unix_ns[2] = UnixNowNs();
+                } else {
+                    next.stale_groups |= SnapshotErcpState;
+                }
 
-            bool ercpOnline = false;
-            bool ercpReady = false;
-            bool driveError = false;
-            bool driveErrors[14]{};
-            bool motorError = false;
-            bool motorErrors[12]{};
-            int ercpType = 0;
-            int ercpMoveStatus = 0;
-            bool loadDirection = false;
-            std::uint32_t ercpStateError = ADSERR_NOERR;
-            KeepFirstError(ercpStateError, ReadData(
-                "MAIN.ERCP_Online_flag", sizeof(ercpOnline), &ercpOnline));
-            KeepFirstError(ercpStateError, ReadData(
-                "POU_Ercp_CycleExecute.Ercp_Ready_State", sizeof(ercpReady), &ercpReady));
-            KeepFirstError(ercpStateError, ReadData(
-                "MAIN_ERCP.bErro_State_Drive_ERCP", sizeof(driveError), &driveError));
-            KeepFirstError(ercpStateError, ReadData(
-                "MAIN_ERCP.DriveErrorState_ERCP", sizeof(driveErrors), driveErrors));
-            KeepFirstError(ercpStateError, ReadData(
-                "MAIN_ERCP.bErro_State_Motor_ERCP", sizeof(motorError), &motorError));
-            KeepFirstError(ercpStateError, ReadData(
-                "MAIN_ERCP.MotorErrorState_ERCP", sizeof(motorErrors), motorErrors));
-            KeepFirstError(ercpStateError,
-                ReadData("MAIN_ERCP.type_of_ERCP", sizeof(ercpType), &ercpType));
-            KeepFirstError(ercpStateError, ReadData(
-                "MAIN_ERCP.ERCP_Status_Feedback_ToMaster",
-                sizeof(ercpMoveStatus), &ercpMoveStatus));
-            KeepFirstError(ercpStateError, ReadData(
-                "MAIN_ERCP.bERCP_Load_Exchange_Dir", sizeof(loadDirection), &loadDirection));
-            next.ercp_state_ads_error = ercpStateError;
-            KeepFirstError(next.overall_ads_error, ercpStateError);
-            if (ercpStateError == ADSERR_NOERR) {
-                next.ercp_flags = static_cast<std::uint16_t>(
-                    (ercpOnline ? 1u << 0 : 0u)
-                    | (ercpReady ? 1u << 1 : 0u)
-                    | (loadDirection ? 1u << 2 : 0u)
-                    | (driveError ? 1u << 3 : 0u)
-                    | (motorError ? 1u << 4 : 0u));
+                ERCPFeedbackData ercpFeedback{};
+                const auto ercpFeedbackError = ReadData(
+                    "MAIN_ERCP.ERCP_Info_Feedback_ToMaster",
+                    sizeof(ercpFeedback), &ercpFeedback);
+                next.ercp_feedback_ads_error = ercpFeedbackError;
+                KeepFirstError(next.overall_ads_error, ercpFeedbackError);
+                if (ercpFeedbackError == ADSERR_NOERR) {
+                    next.ercp_deliver_force = ercpFeedback.Deliver_Force;
+                    next.guide_wire_force = ercpFeedback.GuideWire_Force;
+                    next.bow_force = ercpFeedback.Bow_Force;
+                    next.ercp_deliver_position = ercpFeedback.Deliver_Pos;
+                    next.guide_wire_position = ercpFeedback.GuideWire_Pos;
+                    next.inject_current_position_01 = ercpFeedback.Inject_CurPos_01;
+                    next.inject_current_position_02 = ercpFeedback.Inject_CurPos_02;
+                    next.inject_state_01 = ercpFeedback.Inject_State_01;
+                    next.inject_state_02 = ercpFeedback.Inject_State_02;
+                    next.balloon_pressure = 0;
+                    next.operator_position = 0.0;
+                    next.valid_groups |= SnapshotErcpFeedback;
+                    next.stale_groups &= static_cast<std::uint8_t>(~SnapshotErcpFeedback);
+                    next.sampled_at_unix_ns[3] = UnixNowNs();
+                } else {
+                    next.stale_groups |= SnapshotErcpFeedback;
+                }
+            } else {
+                next.ercp_state_ads_error = ADSERR_NOERR;
+                next.ercp_feedback_ads_error = ADSERR_NOERR;
+                next.ercp_flags = 0;
                 next.ercp_drive_errors = 0;
-                for (std::size_t i = 0; i < std::size(driveErrors); ++i) {
-                    if (driveErrors[i]) next.ercp_drive_errors |= static_cast<std::uint16_t>(1u << i);
-                }
                 next.ercp_motor_errors = 0;
-                for (std::size_t i = 0; i < std::size(motorErrors); ++i) {
-                    if (motorErrors[i]) next.ercp_motor_errors |= static_cast<std::uint16_t>(1u << i);
-                }
-                next.ercp_type = ercpType;
-                next.ercp_move_status = ercpMoveStatus;
-                next.valid_groups |= SnapshotErcpState;
-                next.stale_groups &= static_cast<std::uint8_t>(~SnapshotErcpState);
-                next.sampled_at_unix_ns[2] = UnixNowNs();
-            } else {
-                next.stale_groups |= SnapshotErcpState;
-            }
-
-            ERCPFeedbackData ercpFeedback{};
-            const auto ercpFeedbackError = ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster",
-                sizeof(ercpFeedback), &ercpFeedback);
-            next.ercp_feedback_ads_error = ercpFeedbackError;
-            KeepFirstError(next.overall_ads_error, ercpFeedbackError);
-            if (ercpFeedbackError == ADSERR_NOERR) {
-                next.ercp_deliver_force = ercpFeedback.Deliver_Force;
-                next.guide_wire_force = ercpFeedback.GuideWire_Force;
-                next.bow_force = ercpFeedback.Bow_Force;
-                next.ercp_deliver_position = ercpFeedback.Deliver_Pos;
-                next.guide_wire_position = ercpFeedback.GuideWire_Pos;
-                next.inject_current_position_01 = ercpFeedback.Inject_CurPos_01;
-                next.inject_current_position_02 = ercpFeedback.Inject_CurPos_02;
-                next.inject_state_01 = ercpFeedback.Inject_State_01;
-                next.inject_state_02 = ercpFeedback.Inject_State_02;
-                next.balloon_pressure = 0;
-                next.operator_position = 0.0;
-                next.valid_groups |= SnapshotErcpFeedback;
-                next.stale_groups &= static_cast<std::uint8_t>(~SnapshotErcpFeedback);
-                next.sampled_at_unix_ns[3] = UnixNowNs();
-            } else {
-                next.stale_groups |= SnapshotErcpFeedback;
+                next.valid_groups &= static_cast<std::uint8_t>(
+                    ~(SnapshotErcpState | SnapshotErcpFeedback));
+                next.stale_groups &= static_cast<std::uint8_t>(
+                    ~(SnapshotErcpState | SnapshotErcpFeedback));
+                next.sampled_at_unix_ns[2] = 0;
+                next.sampled_at_unix_ns[3] = 0;
             }
 
             next.poll_completed_unix_ns = UnixNowNs();

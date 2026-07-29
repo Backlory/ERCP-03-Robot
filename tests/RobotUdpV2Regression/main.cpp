@@ -117,7 +117,6 @@ void TestFullStatus()
     status.runtime.mode = protocol::RobotMode::Automatic;
     status.runtime.active_source = protocol::Source::Cloud;
     status.beckhoff_common.values[0] = 12.5;
-    status.raw_io.encoders[4] = 42;
     status.ercp_feedback.operator_position = 0.75;
     status.applied_command.latest_write_attempt.command = SampleControl();
     status.applied_command.latest_write_attempt.source = protocol::Source::Cloud;
@@ -146,7 +145,6 @@ void TestFullStatus()
     Expect(decodedHeader.sequence == 8 && decoded.ads_diagnostics.snapshot_sequence == 99,
         "full status metadata round-trip");
     Expect(decoded.beckhoff_common.values[0] == 12.5
-            && decoded.raw_io.encoders[4] == 42
             && decoded.ercp_feedback.operator_position == 0.75,
         "full status business groups round-trip");
 
@@ -402,12 +400,6 @@ protocol::FullStatusPayload GoldenStatusPayload()
     s.beckhoff_common.motor_errors = 0x40001;
     s.beckhoff_common.scope_type = 2;
     for (std::size_t j = 0; j < 36; ++j) s.beckhoff_common.values[j] = PF(120 + 8 * j);
-    for (std::size_t j = 0; j < 5; ++j) {
-        s.raw_io.encoders[j] = static_cast<std::int32_t>(PU(424 + 4 * j));
-    }
-    for (std::size_t j = 0; j < 7; ++j) {
-        s.raw_io.sensors[j] = static_cast<std::int16_t>(PU(444 + 2 * j));
-    }
     s.ercp_state.flags = 0x0003;
     s.ercp_state.drive_errors = static_cast<std::uint16_t>(PU(484));
     s.ercp_state.motor_errors = static_cast<std::uint16_t>(PU(486));
@@ -449,12 +441,12 @@ protocol::FullStatusPayload GoldenStatusPayload()
     s.ads_diagnostics.poll_completed_unix_ns = PU(928);
     s.ads_diagnostics.snapshot_published_unix_ns = PU(936);
     s.ads_diagnostics.connection_state = protocol::AdsConnectionState::Running;
-    s.ads_diagnostics.valid_groups = 0x0F;
-    s.ads_diagnostics.stale_groups = 0x03;
+    s.ads_diagnostics.valid_groups = 0x0D;
+    s.ads_diagnostics.stale_groups = 0x01;
     s.ads_diagnostics.consecutive_failed_polls = static_cast<std::uint32_t>(PU(948));
     s.ads_diagnostics.overall_ads_error = static_cast<std::uint32_t>(PU(952));
     s.ads_diagnostics.common_ads_error = static_cast<std::uint32_t>(PU(956));
-    s.ads_diagnostics.raw_io_ads_error = static_cast<std::uint32_t>(PU(960));
+    s.ads_diagnostics.reserved_ads_error = 0;
     s.ads_diagnostics.ercp_state_ads_error = static_cast<std::uint32_t>(PU(964));
     s.ads_diagnostics.ercp_feedback_ads_error = static_cast<std::uint32_t>(PU(968));
     s.ads_diagnostics.command_write_ads_error = static_cast<std::uint32_t>(PU(972));
@@ -551,9 +543,6 @@ void TestGoldenStatusFixture()
             && decoded.beckhoff_common.power_level == fixture.beckhoff_common.power_level
             && decoded.beckhoff_common.values == fixture.beckhoff_common.values,
         "golden status Beckhoff group matches the fixed input");
-    Expect(decoded.raw_io.encoders == fixture.raw_io.encoders
-            && decoded.raw_io.sensors == fixture.raw_io.sensors,
-        "golden status raw IO group matches the fixed input");
     Expect(decoded.ercp_state.flags == fixture.ercp_state.flags
             && decoded.ercp_state.drive_errors == fixture.ercp_state.drive_errors
             && decoded.ercp_state.motor_errors == fixture.ercp_state.motor_errors
@@ -596,8 +585,8 @@ void TestGoldenStatusFixture()
                 == fixture.ads_diagnostics.overall_ads_error
             && decoded.ads_diagnostics.common_ads_error
                 == fixture.ads_diagnostics.common_ads_error
-            && decoded.ads_diagnostics.raw_io_ads_error
-                == fixture.ads_diagnostics.raw_io_ads_error
+            && decoded.ads_diagnostics.reserved_ads_error
+                == fixture.ads_diagnostics.reserved_ads_error
             && decoded.ads_diagnostics.ercp_state_ads_error
                 == fixture.ads_diagnostics.ercp_state_ads_error
             && decoded.ads_diagnostics.ercp_feedback_ads_error

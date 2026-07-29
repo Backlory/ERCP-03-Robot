@@ -560,8 +560,6 @@ namespace ercp {
         status.beckhoff_common.motor_errors = snapshot.motor_errors;
         status.beckhoff_common.scope_type = snapshot.scope_type;
         status.beckhoff_common.values = snapshot.common_values;
-        status.raw_io.encoders = snapshot.encoders;
-        status.raw_io.sensors = snapshot.sensors;
         status.ercp_state.flags = snapshot.ercp_flags;
         status.ercp_state.drive_errors = snapshot.ercp_drive_errors;
         status.ercp_state.motor_errors = snapshot.ercp_motor_errors;
@@ -595,7 +593,7 @@ namespace ercp {
         status.ads_diagnostics.consecutive_failed_polls = snapshot.consecutive_failed_polls;
         status.ads_diagnostics.overall_ads_error = snapshot.overall_ads_error;
         status.ads_diagnostics.common_ads_error = snapshot.common_ads_error;
-        status.ads_diagnostics.raw_io_ads_error = snapshot.raw_io_ads_error;
+        status.ads_diagnostics.reserved_ads_error = 0;
         status.ads_diagnostics.ercp_state_ads_error = snapshot.ercp_state_ads_error;
         status.ads_diagnostics.ercp_feedback_ads_error = snapshot.ercp_feedback_ads_error;
         status.ads_diagnostics.command_write_ads_error
