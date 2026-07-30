@@ -1,12 +1,16 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 
 #include "beckhoff_snapshot.hpp"
 
 namespace device::beckhoff {
+
+constexpr std::size_t RobotFeedbackBlockSize = 320;
 
 // Exact ADS block layout of MAIN.Info_Feedback_ToMaster on the deployed
 // TwinCAT runtime. The PLC declaration order, not the gold-table display
@@ -27,7 +31,7 @@ struct RobotFeedbackData {
     double Follow_Force;
 };
 
-static_assert(sizeof(RobotFeedbackData) == 320,
+static_assert(sizeof(RobotFeedbackData) == RobotFeedbackBlockSize,
     "RobotFeedbackData must match MAIN.Info_Feedback_ToMaster");
 static_assert(offsetof(RobotFeedbackData, Follow_Length) == 0,
     "RobotFeedbackData ABI drift");
@@ -55,6 +59,28 @@ static_assert(offsetof(RobotFeedbackData, Rotate_Deqree) == 304,
     "RobotFeedbackData ABI drift");
 static_assert(offsetof(RobotFeedbackData, Follow_Force) == 312,
     "RobotFeedbackData ABI drift");
+
+inline bool DecodeRobotFeedbackBlock(
+    const void *block, std::size_t blockSize, RobotFeedbackData &feedback)
+{
+    if (block == nullptr || blockSize != RobotFeedbackBlockSize) return false;
+
+    const auto *bytes = static_cast<const std::uint8_t *>(block);
+    std::memcpy(&feedback.Follow_Length, bytes + 0, sizeof(feedback.Follow_Length));
+    std::memcpy(&feedback.Switch_Water, bytes + 8, sizeof(feedback.Switch_Water));
+    std::memcpy(&feedback.Switch_Gas, bytes + 9, sizeof(feedback.Switch_Gas));
+    std::memcpy(&feedback.Switch_Suck, bytes + 10, sizeof(feedback.Switch_Suck));
+    std::memcpy(&feedback.Axes_Pos, bytes + 16, sizeof(feedback.Axes_Pos));
+    std::memcpy(&feedback.Big_Whell, bytes + 184, sizeof(feedback.Big_Whell));
+    std::memcpy(&feedback.Small_Whell, bytes + 192, sizeof(feedback.Small_Whell));
+    std::memcpy(&feedback.Force_Sensor, bytes + 200, sizeof(feedback.Force_Sensor));
+    std::memcpy(&feedback.Power_level, bytes + 280, sizeof(feedback.Power_level));
+    std::memcpy(&feedback.lifter, bytes + 288, sizeof(feedback.lifter));
+    std::memcpy(&feedback.Deliver_force, bytes + 296, sizeof(feedback.Deliver_force));
+    std::memcpy(&feedback.Rotate_Deqree, bytes + 304, sizeof(feedback.Rotate_Deqree));
+    std::memcpy(&feedback.Follow_Force, bytes + 312, sizeof(feedback.Follow_Force));
+    return true;
+}
 
 inline void ApplyRobotFeedback(
     const RobotFeedbackData &feedback, BeckhoffSnapshot &snapshot)

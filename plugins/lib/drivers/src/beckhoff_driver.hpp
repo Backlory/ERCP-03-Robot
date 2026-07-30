@@ -94,8 +94,24 @@ namespace device { namespace beckhoff {
     private:
         // 读取写入数据
         std::uint32_t ReadData(const char *paraName, unsigned long length, void *data);
+        struct AdsReadRequest {
+            const char *name;
+            unsigned long length;
+            void *data;
+        };
+        std::uint32_t ReadDataBatch(const AdsReadRequest *requests, std::size_t count,
+            std::uint32_t *itemErrors);
         std::uint32_t WriteData(const char *paraName, unsigned long length, const void *data);
         std::uint32_t SymbolHandle(const char *paraName, unsigned long &handle);
+        struct AdsSymbolInfo {
+            std::uint32_t index_group = 0;
+            std::uint32_t index_offset = 0;
+            std::uint32_t size = 0;
+        };
+        std::uint32_t QuerySymbolInfo(const char *paraName, AdsSymbolInfo &info);
+        std::uint32_t QuerySymbolSize(const char *paraName, std::uint32_t &size);
+        bool ValidateSymbolSize(const char *paraName, std::size_t expectedSize);
+        bool ValidateRobotFeedbackLayout();
         void ReleaseSymbolHandles();
 
         // 创建地址
@@ -110,6 +126,8 @@ namespace device { namespace beckhoff {
 
         mutable std::mutex m_ads_mutex;
         std::map<std::string, unsigned long> m_symbol_handles;
+        bool m_common_block_read_enabled = false;
+        bool m_sum_read_supported = true;
 
     private:
         // 是否打开连接

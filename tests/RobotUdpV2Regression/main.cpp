@@ -1,6 +1,8 @@
+#include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <fstream>
 #include <iostream>
 #include <limits>
@@ -24,6 +26,14 @@ void Expect(bool condition, const char *message)
     if (condition) return;
     ++failures;
     std::cerr << "FAIL: " << message << '\n';
+}
+
+template <typename T>
+void PutFeedbackValue(std::array<std::uint8_t,
+    device::beckhoff::RobotFeedbackBlockSize> &block,
+    std::size_t offset, const T &value)
+{
+    std::memcpy(block.data() + offset, &value, sizeof(value));
 }
 
 protocol::ControlPayload SampleControl()
@@ -52,23 +62,35 @@ protocol::Bytes ControlPacket(protocol::Source source, std::uint64_t session,
 
 void TestBeckhoffFeedbackLayout()
 {
+    std::array<std::uint8_t, device::beckhoff::RobotFeedbackBlockSize> block{};
+    std::array<double, 21> axes{};
+    std::array<double, 10> forces{};
+    for (std::size_t index = 0; index < axes.size(); ++index) {
+        axes[index] = 100.0 + index;
+    }
+    for (std::size_t index = 0; index < forces.size(); ++index) {
+        forces[index] = 10.0 + index;
+    }
+    PutFeedbackValue(block, 0, 0.25);
+    PutFeedbackValue(block, 8, true);
+    PutFeedbackValue(block, 10, true);
+    PutFeedbackValue(block, 16, axes);
+    PutFeedbackValue(block, 184, 1.25);
+    PutFeedbackValue(block, 192, -2.5);
+    PutFeedbackValue(block, 200, forces);
+    PutFeedbackValue(block, 280, std::int16_t{73});
+    PutFeedbackValue(block, 288, 3.25);
+    PutFeedbackValue(block, 296, 4.25);
+    PutFeedbackValue(block, 304, 5.25);
+    PutFeedbackValue(block, 312, 6.25);
+
     device::beckhoff::RobotFeedbackData feedback{};
-    feedback.Follow_Length = 0.25;
-    feedback.Switch_Water = true;
-    feedback.Switch_Suck = true;
-    for (std::size_t index = 0; index < 21; ++index) {
-        feedback.Axes_Pos[index] = 100.0 + index;
-    }
-    feedback.Big_Whell = 1.25;
-    feedback.Small_Whell = -2.5;
-    for (std::size_t index = 0; index < 10; ++index) {
-        feedback.Force_Sensor[index] = 10.0 + index;
-    }
-    feedback.Power_level = 73;
-    feedback.lifter = 3.25;
-    feedback.Deliver_force = 4.25;
-    feedback.Rotate_Deqree = 5.25;
-    feedback.Follow_Force = 6.25;
+    Expect(device::beckhoff::DecodeRobotFeedbackBlock(
+        block.data(), block.size(), feedback),
+        "320-byte Beckhoff feedback block decodes");
+    Expect(!device::beckhoff::DecodeRobotFeedbackBlock(
+        block.data(), block.size() - 1, feedback),
+        "incorrect Beckhoff feedback block size is rejected");
 
     device::beckhoff::BeckhoffSnapshot snapshot;
     device::beckhoff::ApplyRobotFeedback(feedback, snapshot);
