@@ -90,6 +90,7 @@ void TestBeckhoffFeedbackLayout()
         "V3 axes contain the first 19 of the PLC's 21 Axes_Pos values");
 }
 
+
 void TestCodec()
 {
     const auto payload = SampleControl();
@@ -149,6 +150,14 @@ void TestCodec()
     Expect(!protocol::encodeControl(header, nonFinite, output, &error), "NaN rejected");
     nonFinite.values[0] = (std::numeric_limits<double>::infinity)();
     Expect(!protocol::encodeControl(header, nonFinite, output, &error), "infinity rejected");
+    auto outOfRange = payload;
+    outOfRange.inject_velocity[0] = 1.01;
+    Expect(!protocol::encodeControl(header, outOfRange, output, &error),
+        "inject velocity above one rejected");
+    outOfRange = payload;
+    outOfRange.inject_position[0] = -0.01;
+    Expect(!protocol::encodeControl(header, outOfRange, output, &error),
+        "inject position below zero rejected");
 }
 
 void TestFullStatus()

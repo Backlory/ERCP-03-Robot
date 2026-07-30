@@ -199,6 +199,8 @@ namespace ercp {
 
     ROBOT_API_MEMBER const Settings &GetSettings() { return SettingManager::Get(); }
 
+    ROBOT_API_MEMBER std::string GetSettingsPath() { return setfile; }
+
     ROBOT_API int LoadSettings(bool reload) { return SettingManager::Get().LoadSettings(reload); }
 
     ROBOT_API void SaveSettings() { SettingManager::Get().SaveSettings(); }

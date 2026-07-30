@@ -36,61 +36,6 @@ namespace device { namespace beckhoff {
         }
 
         using FeedbackData = RobotFeedbackData;
-        struct ERCPFeedbackData {
-            double Deliver_Force; //器械输送力
-            double GuideWire_Force; //导丝力
-            double Clamp_Force; //夹紧力
-
-            double Follow_Force_01; //跟随力01
-            double Follow_Force_02; //跟随力02
-
-            double Bow_Force; //拉弓力
-
-            double Inject_Force_01; //注射器01力
-            double Inject_Force_02; //注射器02力
-
-            double Deliver_Pos; //器械输送位置
-            double GuideWire_Pos; //导丝输送位置
-
-            double Inject_CurPos_01; //注射器01位置 0，1
-            double Inject_CurPos_02; //注射器02位置 0，1
-
-            int Inject_State_01; //注射器01状态 0：待机 10：注射中 11：注射完成
-            int Inject_State_02; //注射器02状态 0：待机 10：注射中 11：注射完成
-        };
-
-        // These types are ADS wire layouts. Keep them byte-for-byte compatible
-        // with the production TwinCAT structures represented by beckhoff-GT.
-        static_assert(sizeof(ERCPFeedbackData) == 104,
-            "ERCPFeedbackData must match MAIN_ERCP.ERCP_Info_Feedback_ToMaster");
-        static_assert(offsetof(ERCPFeedbackData, Deliver_Force) == 0,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, GuideWire_Force) == 8,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Clamp_Force) == 16,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Follow_Force_01) == 24,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Follow_Force_02) == 32,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Bow_Force) == 40,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Inject_Force_01) == 48,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Inject_Force_02) == 56,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Deliver_Pos) == 64,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, GuideWire_Pos) == 72,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Inject_CurPos_01) == 80,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Inject_CurPos_02) == 88,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Inject_State_01) == 96,
-            "ERCPFeedbackData ABI drift");
-        static_assert(offsetof(ERCPFeedbackData, Inject_State_02) == 100,
-            "ERCPFeedbackData ABI drift");
     public:
         Beckhoff_Motor();
         ~Beckhoff_Motor();
@@ -170,7 +115,11 @@ namespace device { namespace beckhoff {
         // 是否打开连接
         std::atomic<bool> m_bIsOpen{false};
         bool m_port_open = false;
-        bool m_ercp_available = false;
+        std::atomic<bool> m_ercp_available{false};
+        std::uint32_t m_ercp_failed_polls = 0;
+        std::mutex m_command_mutex;
+        GoldDiscreteCommand m_last_ercp_command{};
+        bool m_has_last_ercp_command = false;
 
         // 倍福地址
         AmsAddr m_Addr;

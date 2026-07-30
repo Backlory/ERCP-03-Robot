@@ -42,6 +42,7 @@ namespace ercp {
     ROBOT_API bool ParseIPAddress(const std::string &source, std::string &addr, size_t &port);
 
     ROBOT_API_MEMBER const Settings &GetSettings();
+    ROBOT_API_MEMBER std::string GetSettingsPath();
     ROBOT_API int LoadSettings(bool reload = true);
     ROBOT_API void SaveSettings();
 

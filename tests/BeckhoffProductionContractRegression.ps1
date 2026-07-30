@@ -1,75 +1,60 @@
 param(
-    [string]$RobotRoot = (Split-Path -Parent $PSScriptRoot),
-    [string]$WorkspaceRoot = (Split-Path -Parent (Split-Path -Parent $PSScriptRoot))
+    [string]$RobotRoot = (Split-Path -Parent $PSScriptRoot)
 )
 
 $ErrorActionPreference = 'Stop'
-
-$productionSnapshotRoot = Join-Path $WorkspaceRoot '04-simulator\beckhoff-GT'
-$productionCpp = (Get-ChildItem -LiteralPath $productionSnapshotRoot -Recurse -File `
-    -Filter 'beckhoff_driver.cpp' | Select-Object -First 1).FullName
-$productionHpp = Join-Path (Split-Path -Parent $productionCpp) 'beckhoff_driver.hpp'
-$currentCpp = Join-Path $RobotRoot 'plugins\lib\drivers\src\beckhoff_driver.cpp'
-$currentHpp = Join-Path $RobotRoot 'plugins\lib\drivers\src\beckhoff_driver.hpp'
-
-foreach ($path in @($productionCpp, $productionHpp, $currentCpp, $currentHpp)) {
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
-        throw "Required contract source is missing: $path"
-    }
-}
-
-function Get-AdsSymbols([string]$path) {
-    $source = Get-Content -LiteralPath $path -Raw
-    $matches = [regex]::Matches(
-        $source,
-        '(?s)\b(?:ReadData|WriteData)\s*\(\s*"(?<symbol>[^"]+)"')
-    return @($matches | ForEach-Object { $_.Groups['symbol'].Value } | Sort-Object -Unique)
-}
-
-function Get-StructFields([string]$path, [string]$structName) {
-    $source = Get-Content -LiteralPath $path -Raw
-    $match = [regex]::Match(
-        $source,
-        "(?s)\bstruct\s+$([regex]::Escape($structName))\s*\{(?<body>.*?)\};")
-    if (-not $match.Success) {
-        throw "Cannot find struct $structName in $path"
-    }
-
-    $withoutComments = [regex]::Replace($match.Groups['body'].Value, '//.*', '')
-    return @(($withoutComments -split ';') |
-        ForEach-Object { ([regex]::Replace($_, '\s+', ' ')).Trim() } |
-        Where-Object { $_ })
-}
-
+$driver = Join-Path $RobotRoot 'plugins\lib\drivers\src\beckhoff_driver.cpp'
+$source = Get-Content -LiteralPath $driver -Raw
 $failures = [System.Collections.Generic.List[string]]::new()
-$productionSymbols = Get-AdsSymbols $productionCpp
-$currentSymbols = Get-AdsSymbols $currentCpp
-$unsupportedSymbols = @($currentSymbols | Where-Object { $_ -notin $productionSymbols })
-if ($unsupportedSymbols.Count -ne 0) {
-    $failures.Add(
-        "Robot introduced ADS symbols absent from the production snapshot: " +
-        ($unsupportedSymbols -join ', '))
+
+function Require-Text([string]$text, [string]$description) {
+    if (-not $source.Contains($text)) {
+        $failures.Add("Missing gold-standard contract: $description ($text)")
+    }
 }
 
-$productionFeedbackFields = Get-StructFields $productionHpp 'ERCPFeedbackData'
-$currentFeedbackFields = Get-StructFields $currentHpp 'ERCPFeedbackData'
-if (($productionFeedbackFields -join "`n") -ne ($currentFeedbackFields -join "`n")) {
-    $failures.Add(
-        "ERCPFeedbackData no longer matches the production snapshot.`n" +
-        "Expected: $($productionFeedbackFields -join '; ')`n" +
-        "Actual:   $($currentFeedbackFields -join '; ')")
+foreach ($field in @(
+    'Follow_Length', 'Switch_Water', 'Switch_Gas', 'Switch_Suck',
+    'Big_Wheel', 'Small_Wheel', 'Force_Sensor', 'Power_level', 'lifter',
+    'Deliver_Force', 'Rotate_Degree', 'Follow_Force', 'Axes_Pos')) {
+    Require-Text $field "robot feedback leaf $field"
 }
 
-$currentSource = Get-Content -LiteralPath $currentCpp -Raw
-foreach ($expectedDeclaration in @('bool driveErrors[14]{}', 'bool motorErrors[12]{}')) {
-    if ($currentSource -notmatch [regex]::Escape($expectedDeclaration)) {
-        $failures.Add("Production ADS array length changed; missing declaration: $expectedDeclaration")
+foreach ($field in @(
+    'ERCP_Deliver_Force', 'GuideWire_Force', 'Bow_Force',
+    'ERCP_Deliver_Pos', 'GuideWire_Pos', 'Inject_CurPos_01',
+    'Inject_CurPos_02', 'Inject_State_01', 'Inject_State_02',
+    'Balloon_Pressure', 'Operator_Pos')) {
+    Require-Text $field "ERCP feedback leaf $field"
+}
+
+foreach ($symbol in @(
+    'Cmd_Follow_Comp_Joy_FromMaster', 'Cmd_Operator_Joy_FromMaster',
+    'Cmd_Home_Joy_FromMaster', 'Cmd_IO_Joy_FromMaster',
+    'bERCP_Operate_State_FromMaster', 'bErcp_Cooperate_Enable',
+    'Cmd_6Dhandle_Joy_FromMaster', 'Cmd_Button_Joy_FromMaster',
+    'Inject_Vel_01', 'Inject_Vel_02', 'Inject_Pos_01', 'Inject_Pos_02',
+    'Inject_Enable_01', 'Inject_Enable_02')) {
+    Require-Text $symbol "command leaf $symbol"
+}
+
+foreach ($declaration in @('bool driveErrors[13]{}', 'bool motorErrors[11]{}',
+        'bool mainDriveErrors[22]{}', 'bool mainMotorErrors[19]{}')) {
+    Require-Text $declaration "gold error-array length"
+}
+
+foreach ($forbidden in @(
+    'WriteData("MAIN.Follow_Control_Cmd",',
+    'ReadData("MAIN.Info_Feedback_ToMaster",',
+    'ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster",')) {
+    if ($source.Contains($forbidden)) {
+        $failures.Add("Raw TwinCAT STRUCT access is forbidden without an explicit ABI: $forbidden")
     }
 }
 
 if ($failures.Count -ne 0) {
-    Write-Error ($failures -join "`n`n")
+    Write-Error ($failures -join "`n")
     exit 1
 }
 
-Write-Output 'PASS: Robot ADS symbols, ERCP feedback layout, and error-array lengths match the production snapshot.'
+Write-Output 'PASS: Beckhoff boundary uses gold-standard leaf symbols and exact array lengths.'

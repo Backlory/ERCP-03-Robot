@@ -2,9 +2,12 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <iomanip>
 #include <limits>
+#include <sstream>
 #include <thread>
 #include <iostream>
+#include "robot_config.h"
 #include "utils.h"
 #include "beckhoff_driver.hpp"
 
@@ -39,7 +42,8 @@ namespace device { namespace beckhoff {
     {
         if (IsOpen()) return true;
         CloseConn();
-        m_ercp_available = false;
+        m_ercp_available.store(false, std::memory_order_release);
+        m_ercp_failed_polls = 0;
 
         {
             std::lock_guard<std::mutex> lock(m_snapshot_mutex);
@@ -103,11 +107,13 @@ namespace device { namespace beckhoff {
             }
         }
         m_bIsOpen.store(true, std::memory_order_release);
-        // MAIN_ERCP is an optional, separate cart. Detect its PLC interface
-        // read-only at connection time; it is not a deployment switch.
-        ERCPFeedbackData ercpProbe{};
-        m_ercp_available = ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster",
-            sizeof(ercpProbe), &ercpProbe) == ADSERR_NOERR;
+        // MAIN_ERCP is optional. Probe a gold-standard leaf symbol instead of
+        // assuming an ABI for the enclosing TwinCAT STRUCT.
+        double ercpProbe = 0;
+        m_ercp_available.store(ReadData(
+            "MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force",
+            sizeof(ercpProbe), &ercpProbe) == ADSERR_NOERR,
+            std::memory_order_release);
         m_StateUpdate_Thread
             = boost::make_shared<boost::thread>(&Beckhoff_Motor::StateUpdateThread, this);
         return true;
@@ -170,7 +176,30 @@ namespace device { namespace beckhoff {
     std::uint32_t Beckhoff_Motor::FollowOperationDataResult(
         unsigned long length, const void *data)
     {
-        const std::uint32_t result = WriteData("MAIN.Follow_Control_Cmd", length, data);
+        if (length != sizeof(beckhoff_follow_cmd) || data == nullptr)
+            return ADSERR_DEVICE_INVALIDSIZE;
+        const auto &command = *static_cast<const beckhoff_follow_cmd *>(data);
+        const double operatorValues[9] = {
+            command.vel_move, command.vel_rotate, command.vel_bend_lr,
+            command.vel_bend_ud, command.vel_pincer, command.vel_cutter_feed,
+            command.vel_cutter_rot, command.vel_cutter_bend, command.vel_wire_feed};
+        const bool homeValues[3] = {
+            command.home_rotate, command.home_bend_lr, command.home_bend_ud};
+        const bool ioValues[3] = {
+            command.switch_water, command.switch_gas, command.switch_suct};
+        std::uint32_t result = ADSERR_NOERR;
+        KeepFirstError(result, WriteData(
+            "MAIN.Follow_Control_Cmd.Cmd_Follow_Comp_Joy_FromMaster",
+            sizeof(command.follow_comp_botton), &command.follow_comp_botton));
+        KeepFirstError(result, WriteData(
+            "MAIN.Follow_Control_Cmd.Cmd_Operator_Joy_FromMaster",
+            sizeof(operatorValues), operatorValues));
+        KeepFirstError(result, WriteData(
+            "MAIN.Follow_Control_Cmd.Cmd_Home_Joy_FromMaster",
+            sizeof(homeValues), homeValues));
+        KeepFirstError(result, WriteData(
+            "MAIN.Follow_Control_Cmd.Cmd_IO_Joy_FromMaster",
+            sizeof(ioValues), ioValues));
         std::lock_guard<std::mutex> lock(m_snapshot_mutex);
         m_snapshot.command_write_ads_error = result;
         return result;
@@ -179,11 +208,68 @@ namespace device { namespace beckhoff {
     std::uint32_t Beckhoff_Motor::GoldDiscreteCommandResult(
         const device::beckhoff::GoldDiscreteCommand &command)
     {
+        std::uint32_t result = ADSERR_NOERR;
         if (command.robot_action >= 0) {
-            return WriteData("MAIN.Status_Command_FromMaster",
-                sizeof(command.robot_action), &command.robot_action);
+            KeepFirstError(result, WriteData("MAIN.Status_Command_FromMaster",
+                sizeof(command.robot_action), &command.robot_action));
         }
-        return ADSERR_NOERR;
+        if (!m_ercp_available.load(std::memory_order_acquire)) {
+            std::lock_guard<std::mutex> lock(m_command_mutex);
+            m_has_last_ercp_command = false;
+            return result;
+        }
+
+        auto applied = command;
+        const auto snapshot = Snapshot();
+        if (snapshot.inject_state_01 == 11) applied.inject_enable[0] = false;
+        if (snapshot.inject_state_02 == 11) applied.inject_enable[1] = false;
+
+        std::lock_guard<std::mutex> lock(m_command_mutex);
+        const bool first = !m_has_last_ercp_command;
+        const auto &last = m_last_ercp_command;
+        if (first || applied.operate != last.operate)
+            KeepFirstError(result, WriteData("MAIN_ERCP.bERCP_Operate_State_FromMaster",
+                sizeof(applied.operate), &applied.operate));
+        if (first || applied.cooperate != last.cooperate)
+            KeepFirstError(result, WriteData("MAIN_ERCP.bErcp_Cooperate_Enable",
+                sizeof(applied.cooperate), &applied.cooperate));
+        if (first || std::memcmp(applied.handle_6d, last.handle_6d,
+                sizeof(applied.handle_6d)) != 0)
+            KeepFirstError(result, WriteData(
+                "MAIN_ERCP.ERCP_Control_Cmd.Cmd_6Dhandle_Joy_FromMaster",
+                sizeof(applied.handle_6d), applied.handle_6d));
+        if (first || std::memcmp(applied.buttons, last.buttons,
+                sizeof(applied.buttons)) != 0)
+            KeepFirstError(result, WriteData(
+                "MAIN_ERCP.ERCP_Control_Cmd.Cmd_Button_Joy_FromMaster",
+                sizeof(applied.buttons), applied.buttons));
+        static constexpr const char *velocitySymbols[2] = {
+            "MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_01",
+            "MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_02"};
+        static constexpr const char *positionSymbols[2] = {
+            "MAIN_ERCP.ERCP_Inject_Cmd.Inject_Pos_01",
+            "MAIN_ERCP.ERCP_Inject_Cmd.Inject_Pos_02"};
+        static constexpr const char *enableSymbols[2] = {
+            "MAIN_ERCP.ERCP_Inject_Cmd.Inject_Enable_01",
+            "MAIN_ERCP.ERCP_Inject_Cmd.Inject_Enable_02"};
+        for (std::size_t i = 0; i < 2; ++i) {
+            if (first || applied.inject_velocity[i] != last.inject_velocity[i])
+                KeepFirstError(result, WriteData(velocitySymbols[i],
+                    sizeof(applied.inject_velocity[i]), &applied.inject_velocity[i]));
+            if (first || applied.inject_position[i] != last.inject_position[i])
+                KeepFirstError(result, WriteData(positionSymbols[i],
+                    sizeof(applied.inject_position[i]), &applied.inject_position[i]));
+            if (first || applied.inject_enable[i] != last.inject_enable[i])
+                KeepFirstError(result, WriteData(enableSymbols[i],
+                    sizeof(applied.inject_enable[i]), &applied.inject_enable[i]));
+        }
+        if (result == ADSERR_NOERR) {
+            m_last_ercp_command = applied;
+            m_has_last_ercp_command = true;
+        } else {
+            m_has_last_ercp_command = false;
+        }
+        return result;
     }
 
     // ��������
@@ -283,9 +369,21 @@ namespace device { namespace beckhoff {
             == ADSERR_NOERR;
     }
 
-    bool Beckhoff_Motor::IsERCPOnline() { return (Snapshot().ercp_flags & (1u << 0)) != 0; }
+    bool Beckhoff_Motor::IsERCPOnline()
+    {
+        const auto snapshot = Snapshot();
+        return (snapshot.valid_groups & SnapshotErcpState) != 0
+            && (snapshot.stale_groups & SnapshotErcpState) == 0
+            && (snapshot.ercp_flags & (1u << 0)) != 0;
+    }
 
-    bool Beckhoff_Motor::IsERCPReady() { return (Snapshot().ercp_flags & (1u << 1)) != 0; }
+    bool Beckhoff_Motor::IsERCPReady()
+    {
+        const auto snapshot = Snapshot();
+        return (snapshot.valid_groups & SnapshotErcpState) != 0
+            && (snapshot.stale_groups & SnapshotErcpState) == 0
+            && (snapshot.ercp_flags & (1u << 1)) != 0;
+    }
 
     double Beckhoff_Motor::GetERCPDeliverForce() { return Snapshot().ercp_deliver_force; }
 
@@ -324,8 +422,13 @@ namespace device { namespace beckhoff {
         const auto handleResult = SymbolHandle(paraName, handle);
         if (handleResult != ADSERR_NOERR) return handleResult;
 
-        return static_cast<std::uint32_t>(
+        const auto result = static_cast<std::uint32_t>(
             AdsSyncReadReq(&m_Addr, ADSIGRP_SYM_VALBYHND, handle, length, data));
+        if (result != ADSERR_NOERR) {
+            AdsSyncWriteReq(&m_Addr, ADSIGRP_SYM_RELEASEHND, 0, sizeof(handle), &handle);
+            m_symbol_handles.erase(paraName);
+        }
+        return result;
     }
 
     // 写入数据
@@ -339,8 +442,13 @@ namespace device { namespace beckhoff {
         const auto handleResult = SymbolHandle(paraName, handle);
         if (handleResult != ADSERR_NOERR) return handleResult;
 
-        return static_cast<std::uint32_t>(AdsSyncWriteReq(&m_Addr,
+        const auto result = static_cast<std::uint32_t>(AdsSyncWriteReq(&m_Addr,
             ADSIGRP_SYM_VALBYHND, handle, length, const_cast<void *>(data)));
+        if (result != ADSERR_NOERR) {
+            AdsSyncWriteReq(&m_Addr, ADSIGRP_SYM_RELEASEHND, 0, sizeof(handle), &handle);
+            m_symbol_handles.erase(paraName);
+        }
+        return result;
     }
 
     void Beckhoff_Motor::ReleaseSymbolHandles()
@@ -385,6 +493,8 @@ namespace device { namespace beckhoff {
     // 更新状态线程函�?
     void Beckhoff_Motor::StateUpdateThread()
     {
+        auto nextErcpProbe = std::chrono::steady_clock::now();
+        std::string lastCommonFailureDetails;
         while (!boost::this_thread::interruption_requested()) {
             const auto cycleStartedSteady = std::chrono::steady_clock::now();
             BeckhoffSnapshot next = Snapshot();
@@ -396,15 +506,60 @@ namespace device { namespace beckhoff {
             INT16 prepareState{};
             std::int32_t scopeType{};
             FeedbackData feedback{};
+            bool mainMotorErrors[19]{};
             std::uint32_t commonError = ADSERR_NOERR;
-            KeepFirstError(commonError, ReadData("MAIN.Status_Feedback_ToMaster",
-                sizeof(moveState), &moveState));
-            KeepFirstError(commonError,
-                ReadData("MAIN.iPrepare_State", sizeof(prepareState), &prepareState));
-            KeepFirstError(commonError,
-                ReadData("MAIN.type_of_scope", sizeof(scopeType), &scopeType));
-            KeepFirstError(commonError, ReadData(
-                "MAIN.Info_Feedback_ToMaster", sizeof(feedback), &feedback));
+            std::ostringstream commonFailures;
+            bool hasCommonFailure = false;
+            const auto readCommon = [&](const char *name, unsigned long length, void *data) {
+                const auto error = ReadData(name, length, data);
+                KeepFirstError(commonError, error);
+                if (error == ADSERR_NOERR) return;
+                if (hasCommonFailure) commonFailures << ", ";
+                commonFailures << name << "=0x" << std::uppercase << std::hex << error
+                               << std::nouppercase << std::dec;
+                if (error == ADSERR_DEVICE_SYMBOLNOTFOUND) {
+                    commonFailures << "(ADS_SYMBOL_NOT_FOUND)";
+                }
+                hasCommonFailure = true;
+            };
+            readCommon("MAIN.Status_Feedback_ToMaster", sizeof(moveState), &moveState);
+            readCommon("MAIN.iPrepare_State", sizeof(prepareState), &prepareState);
+            readCommon("MAIN.type_of_scope", sizeof(scopeType), &scopeType);
+            // These three symbols are absent from the deployed robot-body PLC.
+            // Keep their wire fields at zero instead of making the whole Common
+            // snapshot stale and suppressing Robot status publication.
+            readCommon("MAIN.MotorErrorState", sizeof(mainMotorErrors), mainMotorErrors);
+#define READ_MAIN_FEEDBACK(field, value) \
+            readCommon("MAIN.Info_Feedback_ToMaster." field, sizeof(value), &(value))
+            READ_MAIN_FEEDBACK("Follow_Length", feedback.Follow_Length);
+            READ_MAIN_FEEDBACK("Switch_Water", feedback.Switch_Water);
+            READ_MAIN_FEEDBACK("Switch_Gas", feedback.Switch_Gas);
+            READ_MAIN_FEEDBACK("Switch_Suck", feedback.Switch_Suck);
+            READ_MAIN_FEEDBACK("Big_Wheel", feedback.Big_Whell);
+            READ_MAIN_FEEDBACK("Small_Wheel", feedback.Small_Whell);
+            readCommon(
+                "MAIN.Info_Feedback_ToMaster.Force_Sensor",
+                sizeof(feedback.Force_Sensor), feedback.Force_Sensor);
+            READ_MAIN_FEEDBACK("Power_level", feedback.Power_level);
+            READ_MAIN_FEEDBACK("lifter", feedback.lifter);
+            READ_MAIN_FEEDBACK("Deliver_Force", feedback.Deliver_force);
+            READ_MAIN_FEEDBACK("Rotate_Degree", feedback.Rotate_Deqree);
+            READ_MAIN_FEEDBACK("Follow_Force", feedback.Follow_Force);
+            readCommon(
+                "MAIN.Info_Feedback_ToMaster.Axes_Pos",
+                sizeof(feedback.Axes_Pos), feedback.Axes_Pos);
+#undef READ_MAIN_FEEDBACK
+            const auto commonFailureDetails = commonFailures.str();
+            if (commonError != ADSERR_NOERR
+                    && commonFailureDetails != lastCommonFailureDetails) {
+                ROBOT_ERROR(true,
+                    "Beckhoff Common status publication blocked; failed required fields: "
+                    << commonFailureDetails)
+            } else if (commonError == ADSERR_NOERR && !lastCommonFailureDetails.empty()) {
+                ROBOT_INFO(true,
+                    "Beckhoff Common status recovered; all required fields are readable.")
+            }
+            lastCommonFailureDetails = commonFailureDetails;
             next.common_ads_error = commonError;
             KeepFirstError(next.overall_ads_error, commonError);
             if (commonError == ADSERR_NOERR) {
@@ -412,6 +567,11 @@ namespace device { namespace beckhoff {
                 ApplyRobotFeedback(feedback, next);
                 next.prepare_state = prepareState == 1 ? 1 : 0;
                 next.scope_type = scopeType;
+                next.error_flags = 0;
+                next.drive_errors = 0;
+                next.motor_errors = 0;
+                for (std::size_t i = 0; i < std::size(mainMotorErrors); ++i)
+                    if (mainMotorErrors[i]) next.motor_errors |= 1u << i;
                 next.valid_groups |= SnapshotCommon;
                 next.stale_groups &= static_cast<std::uint8_t>(~SnapshotCommon);
                 next.sampled_at_unix_ns[0] = UnixNowNs();
@@ -419,13 +579,24 @@ namespace device { namespace beckhoff {
                 next.stale_groups |= SnapshotCommon;
             }
 
-            if (m_ercp_available) {
+            if (!m_ercp_available.load(std::memory_order_acquire)
+                    && cycleStartedSteady >= nextErcpProbe) {
+                double ercpProbe = 0;
+                const bool detected = ReadData(
+                    "MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force",
+                    sizeof(ercpProbe), &ercpProbe) == ADSERR_NOERR;
+                m_ercp_available.store(detected, std::memory_order_release);
+                if (detected) m_ercp_failed_polls = 0;
+                nextErcpProbe = cycleStartedSteady + std::chrono::seconds(1);
+            }
+
+            if (m_ercp_available.load(std::memory_order_acquire)) {
                 bool ercpOnline = false;
                 bool ercpReady = false;
                 bool driveError = false;
-                bool driveErrors[14]{};
+                bool driveErrors[13]{};
                 bool motorError = false;
-                bool motorErrors[12]{};
+                bool motorErrors[11]{};
                 int ercpType = 0;
                 int ercpMoveStatus = 0;
                 bool loadDirection = false;
@@ -477,29 +648,64 @@ namespace device { namespace beckhoff {
                     next.stale_groups |= SnapshotErcpState;
                 }
 
-                ERCPFeedbackData ercpFeedback{};
-                const auto ercpFeedbackError = ReadData(
-                    "MAIN_ERCP.ERCP_Info_Feedback_ToMaster",
-                    sizeof(ercpFeedback), &ercpFeedback);
+                double ercpDeliverForce = 0;
+                double guideWireForce = 0;
+                double bowForce = 0;
+                double ercpDeliverPosition = 0;
+                double guideWirePosition = 0;
+                double injectPosition01 = 0;
+                double injectPosition02 = 0;
+                std::int32_t injectState01 = 0;
+                std::int32_t injectState02 = 0;
+                std::int16_t balloonPressure = 0;
+                double operatorPosition = 0;
+                std::uint32_t ercpFeedbackError = ADSERR_NOERR;
+#define READ_ERCP_FEEDBACK(field, value) \
+                KeepFirstError(ercpFeedbackError, ReadData( \
+                    "MAIN_ERCP.ERCP_Info_Feedback_ToMaster." field, \
+                    sizeof(value), &(value)))
+                READ_ERCP_FEEDBACK("ERCP_Deliver_Force", ercpDeliverForce);
+                READ_ERCP_FEEDBACK("GuideWire_Force", guideWireForce);
+                READ_ERCP_FEEDBACK("Bow_Force", bowForce);
+                READ_ERCP_FEEDBACK("ERCP_Deliver_Pos", ercpDeliverPosition);
+                READ_ERCP_FEEDBACK("GuideWire_Pos", guideWirePosition);
+                READ_ERCP_FEEDBACK("Inject_CurPos_01", injectPosition01);
+                READ_ERCP_FEEDBACK("Inject_CurPos_02", injectPosition02);
+                READ_ERCP_FEEDBACK("Inject_State_01", injectState01);
+                READ_ERCP_FEEDBACK("Inject_State_02", injectState02);
+                READ_ERCP_FEEDBACK("Balloon_Pressure", balloonPressure);
+                READ_ERCP_FEEDBACK("Operator_Pos", operatorPosition);
+#undef READ_ERCP_FEEDBACK
                 next.ercp_feedback_ads_error = ercpFeedbackError;
                 KeepFirstError(next.overall_ads_error, ercpFeedbackError);
                 if (ercpFeedbackError == ADSERR_NOERR) {
-                    next.ercp_deliver_force = ercpFeedback.Deliver_Force;
-                    next.guide_wire_force = ercpFeedback.GuideWire_Force;
-                    next.bow_force = ercpFeedback.Bow_Force;
-                    next.ercp_deliver_position = ercpFeedback.Deliver_Pos;
-                    next.guide_wire_position = ercpFeedback.GuideWire_Pos;
-                    next.inject_current_position_01 = ercpFeedback.Inject_CurPos_01;
-                    next.inject_current_position_02 = ercpFeedback.Inject_CurPos_02;
-                    next.inject_state_01 = ercpFeedback.Inject_State_01;
-                    next.inject_state_02 = ercpFeedback.Inject_State_02;
-                    next.balloon_pressure = 0;
-                    next.operator_position = 0.0;
+                    next.ercp_deliver_force = ercpDeliverForce;
+                    next.guide_wire_force = guideWireForce;
+                    next.bow_force = bowForce;
+                    next.ercp_deliver_position = ercpDeliverPosition;
+                    next.guide_wire_position = guideWirePosition;
+                    next.inject_current_position_01 = injectPosition01;
+                    next.inject_current_position_02 = injectPosition02;
+                    next.inject_state_01 = injectState01;
+                    next.inject_state_02 = injectState02;
+                    next.balloon_pressure = balloonPressure;
+                    next.operator_position = operatorPosition;
                     next.valid_groups |= SnapshotErcpFeedback;
                     next.stale_groups &= static_cast<std::uint8_t>(~SnapshotErcpFeedback);
                     next.sampled_at_unix_ns[3] = UnixNowNs();
                 } else {
                     next.stale_groups |= SnapshotErcpFeedback;
+                }
+
+                if (ercpStateError == ADSERR_NOERR
+                        && ercpFeedbackError == ADSERR_NOERR) {
+                    m_ercp_failed_polls = 0;
+                } else if (++m_ercp_failed_polls >= 3) {
+                    m_ercp_available.store(false, std::memory_order_release);
+                    m_ercp_failed_polls = 0;
+                    next.valid_groups &= static_cast<std::uint8_t>(
+                        ~(SnapshotErcpState | SnapshotErcpFeedback));
+                    nextErcpProbe = cycleStartedSteady + std::chrono::seconds(1);
                 }
             } else {
                 next.ercp_state_ads_error = ADSERR_NOERR;

@@ -36,31 +36,25 @@ V2/V3 混部会被双方的严格解码器拒绝。
 
 因此 Robot 必须保持以下边界：
 
-- 当前在线机器人 PLC 的 `MAIN.Info_Feedback_ToMaster` 为 320B，其中
-  `Axes_Pos` 为 21 路；Robot ADS 侧完整读取 21 路，V3 UDP 为兼容固定布局仍发送前 19 路；
-  该结构的在线内存顺序是 `Follow_Length/Switches`、`Axes_Pos[21]`、
-  `Big_Wheel/Small_Wheel`、`Force_Sensor[10]`、`Power_level`、`lifter`、
-  `Deliver_Force`、`Rotate_Degree`、`Follow_Force`，不得按金标准表格展示顺序
-  直接声明 C++ block-read 结构；
-- `MAIN_ERCP.ERCP_Info_Feedback_ToMaster` 保持 104B 旧布局；
-- `DriveErrorState_ERCP` 和 `MotorErrorState_ERCP` 分别按 14、12 个 `BOOL` 读取；
+- Robot 对机器人本体和 ERCP 台车均按金标准的叶子符号读写，不以 Markdown
+  行顺序推断 TwinCAT `STRUCT` 的声明顺序、对齐或总长度；
+- `Axes_Pos` 按金标准读取 21 路，V3 固定网络布局发送前 19 路；
+- `DriveErrorState`/`MotorErrorState` 分别按 22/19 个 `BOOL` 读取，
+  `DriveErrorState_ERCP`/`MotorErrorState_ERCP` 分别按 13/11 个 `BOOL` 读取；
 - 公共状态有效性只依赖原有
   `MAIN.Status_Feedback_ToMaster` 和 `MAIN.Info_Feedback_ToMaster`；
-- 连续控制仍只写生产快照已有的 `MAIN.Follow_Control_Cmd`（88B）；
+- 连续控制逐项写
+  `Cmd_Follow_Comp_Joy_FromMaster`、`Cmd_Operator_Joy_FromMaster[9]`、
+  `Cmd_Home_Joy_FromMaster[3]` 和 `Cmd_IO_Joy_FromMaster[3]`；
 - Robot action 只写生产快照已有的 `MAIN.Status_Command_FromMaster`；
 - 金标准不定义旧版 `MAIN.IEncoder`/`MAIN.ISensor`，Robot 不得查询这些符号。
   为保持 V3 的 8 组/1200B 线格式，第 3 组改为固定全零的保留组；
-- `MAIN_ERCP.*` 属于可选的独立 ERCP 台车；Robot 在 ADS 建连时只读探测
-  `MAIN_ERCP.ERCP_Info_Feedback_ToMaster`。符号不存在时自动视为台车未接入，
-  不轮询或写入该组，也不因此将机器人 ADS 连接标记为 degraded；
-- ERCP operate 保留原有 online/ready 状态迁移写入
-  `MAIN_ERCP.bERCP_Operate_State_FromMaster`。
-
-以下 V3 网络字段尚无现有生产 PLC 接口证据，当前不得读写 Beckhoff：
-
-- Robot prepare、22 路驱动错误、19 路电机错误；
-- ERCP cooperate、6D handle、3 buttons；
-- 双注射器速度、位置和使能；
+- `MAIN_ERCP.*` 属于可选台车。Robot 以
+  `ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force` 叶子符号探测接口，
+  不可用时清除 ERCP 有效组且不影响机器人本体；每秒只读重探测，支持晚接入；
+- ERCP 连续量、operate/cooperate、6D handle、3 buttons 和双注射器命令
+  仅在网络命令新鲜、台车 online 且 ready 时写入，否则实际写入/回显均为零；
+- 注射状态为完成（11）时，相应注射使能强制为 `FALSE`。
 - Balloon pressure、operator position。
 
 这些字段在 V3 状态中暂按零值/未知值上报，在 applied-command 中不得伪报为已经写入。

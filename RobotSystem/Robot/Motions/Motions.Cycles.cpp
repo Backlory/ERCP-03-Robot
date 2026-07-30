@@ -21,12 +21,13 @@ namespace ercp {
     }
 
     static protocol::v2::ControlPayload applied_control(
-        const beckhoff_follow_cmd &follow_cmd, const protocol::v2::ControlPayload &requested)
+        const beckhoff_follow_cmd &follow_cmd,
+        const device::beckhoff::GoldDiscreteCommand &discrete)
     {
         using protocol::v2::ControlValueIndex;
         using protocol::v2::controlIndex;
         protocol::v2::ControlPayload applied;
-        applied.robot_action = requested.robot_action;
+        applied.robot_action = discrete.robot_action;
         applied.values[controlIndex(ControlValueIndex::FollowCompensation)] =
             follow_cmd.follow_comp_botton;
         applied.values[controlIndex(ControlValueIndex::ScopeMove)] = follow_cmd.vel_move;
@@ -49,6 +50,21 @@ namespace ercp {
             | (follow_cmd.switch_water ? 1u << 3 : 0u)
             | (follow_cmd.switch_gas ? 1u << 4 : 0u)
             | (follow_cmd.switch_suct ? 1u << 5 : 0u);
+        applied.ercp_switches =
+            (discrete.operate ? 1u << 0 : 0u)
+            | (discrete.cooperate ? 1u << 1 : 0u)
+            | (discrete.buttons[0] ? 1u << 2 : 0u)
+            | (discrete.buttons[1] ? 1u << 3 : 0u)
+            | (discrete.buttons[2] ? 1u << 4 : 0u);
+        std::copy(std::begin(discrete.handle_6d), std::end(discrete.handle_6d),
+            applied.ercp_6d.begin());
+        std::copy(std::begin(discrete.inject_velocity),
+            std::end(discrete.inject_velocity), applied.inject_velocity.begin());
+        std::copy(std::begin(discrete.inject_position),
+            std::end(discrete.inject_position), applied.inject_position.begin());
+        applied.inject_enables =
+            (discrete.inject_enable[0] ? 1u << 0 : 0u)
+            | (discrete.inject_enable[1] ? 1u << 1 : 0u);
         return applied;
     }
 
@@ -110,32 +126,25 @@ namespace ercp {
         }
         m_command_fresh = fresh;
 
-        // Preserve the production Beckhoff contract: ERCP operate state is the
-        // only proven discrete ERCP symbol and is written only on state changes.
-        bool ercp_online = robot.BeckhoffIsERCPOnline();
-        bool ercp_ready = robot.BeckhoffIsERCPReady();
-        static bool bERCPOnline = ercp_online;
-        static bool bERCPReady = false;
-        if (ercp_online != bERCPOnline) {
-            if (!ercp_online)
-                robot.BeckhoffERCPOperateState(false);
-            else if (ercp_ready)
-                robot.BeckhoffERCPOperateState(true);
-        } else if (ercp_online && ercp_ready != bERCPReady) {
-            robot.BeckhoffERCPOperateState(ercp_ready);
+        const bool ercpAllowed = fresh
+            && robot.BeckhoffIsERCPOnline() && robot.BeckhoffIsERCPReady();
+        auto safeCommand = command;
+        if (!ercpAllowed) {
+            using protocol::v2::ControlValueIndex;
+            using protocol::v2::controlIndex;
+            safeCommand.values[controlIndex(ControlValueIndex::CutterFeed)] = 0;
+            safeCommand.values[controlIndex(ControlValueIndex::CutterSwing)] = 0;
+            safeCommand.values[controlIndex(ControlValueIndex::CutterBend)] = 0;
+            safeCommand.values[controlIndex(ControlValueIndex::GuideWireFeed)] = 0;
         }
-        bERCPOnline = ercp_online;
-        bERCPReady = ercp_ready;
 
         // 只在此处将网络控制字映射为 PLC native 10+6。
         beckhoff_follow_cmd follow_cmd;
-        build_follow_cmd(command, follow_cmd);
+        build_follow_cmd(safeCommand, follow_cmd);
         const auto appliedAt = robot_udp_v2::UnixNowNs();
         auto adsError = robot.BeckhoffFollowDataResult(sizeof(follow_cmd), &follow_cmd);
         device::beckhoff::GoldDiscreteCommand discrete;
         discrete.robot_action = command.robot_action;
-        const bool ercpAllowed = fresh
-            && robot.BeckhoffIsERCPOnline() && robot.BeckhoffIsERCPReady();
         discrete.operate = ercpAllowed && (command.ercp_switches & (1u << 0)) != 0;
         discrete.cooperate = ercpAllowed && (command.ercp_switches & (1u << 1)) != 0;
         for (std::size_t i = 0; i < 6; ++i)
@@ -149,6 +158,9 @@ namespace ercp {
             discrete.inject_enable[i] =
                 ercpAllowed && (command.inject_enables & (1u << i)) != 0;
         }
+        const auto beckhoffSnapshot = robot.BeckhoffSnapshot();
+        if (beckhoffSnapshot.inject_state_01 == 11) discrete.inject_enable[0] = false;
+        if (beckhoffSnapshot.inject_state_02 == 11) discrete.inject_enable[1] = false;
         const auto discreteError = robot.BeckhoffGoldDiscreteCommandResult(discrete);
         if (adsError == 0) adsError = discreteError;
         const bool succeeded = adsError == 0;
@@ -159,7 +171,7 @@ namespace ercp {
             : (fresh ? protocol::v2::ApplyResult::Succeeded
                      : protocol::v2::ApplyResult::TimedOutToZero);
         // 状态中的历史命令必须等于实际交给 ADS 的 10+6，而不是限幅前的网络原值。
-        const auto appliedCommand = applied_control(follow_cmd, command);
+        const auto appliedCommand = applied_control(follow_cmd, discrete);
         m_applied_commands.MarkAttempt(
             appliedCommand, metadata, result, adsError, appliedAt, succeeded);
     }

@@ -33,6 +33,7 @@ int main(int argv, char *argc[])
     auto logfile = ercp::GetLogPath() + "\\ercp.log";
     loguru::add_file(logfile.c_str(), loguru::Append, loguru::Verbosity_MAX);
 #endif
+    ROBOT_INFO(true, "RobotSystem loaded settings YAML: " << ercp::GetSettingsPath())
 
     // 初始化定时器
     ilsr::Time::GetInstance();
