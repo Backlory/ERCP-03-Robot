@@ -385,6 +385,8 @@ plugins/lib/drivers/src/*
 !plugins/lib/drivers/src/Device.hpp
 !plugins/lib/drivers/src/beckhoff_driver.cpp
 !plugins/lib/drivers/src/beckhoff_driver.hpp
+!plugins/lib/drivers/src/direct_ads_transport.cpp
+!plugins/lib/drivers/src/direct_ads_transport.hpp
 
 cmake
 3rdparty

@@ -38,7 +38,8 @@ namespace device { namespace beckhoff {
     }
 
     // 打开链接
-    bool Beckhoff_Motor::OpenConn(string sIPAddr, int iPort)
+    bool Beckhoff_Motor::OpenConn(string sIPAddr, int iPort, const string &transport,
+        const string &tcpHost, int tcpPort)
     {
         if (IsOpen()) return true;
         CloseConn();
@@ -56,10 +57,19 @@ namespace device { namespace beckhoff {
         // 倍福地址
         // AmsAddr bfAddr;// = BuildAddr(sIPAddr, iPort);
 
+        BuildAddr(sIPAddr, iPort, m_Addr);
+        m_direct_mode = transport == "direct";
         {
             std::lock_guard<std::mutex> lock(m_ads_mutex);
-            nPort = AdsPortOpen();
-            m_port_open = nPort > 0;
+            if (m_direct_mode) {
+                m_port_open = tcpPort > 0 && tcpPort <= 65535
+                    && m_direct_ads.Connect(
+                        tcpHost, static_cast<std::uint16_t>(tcpPort), m_Addr);
+                nPort = m_port_open ? 1 : 0;
+            } else {
+                nPort = AdsPortOpen();
+                m_port_open = nPort > 0;
+            }
         }
         if (!m_port_open) {
             std::lock_guard<std::mutex> lock(m_snapshot_mutex);
@@ -68,7 +78,6 @@ namespace device { namespace beckhoff {
             m_snapshot.published_unix_ns = UnixNowNs();
             return false;
         }
-        BuildAddr(sIPAddr, iPort, m_Addr);
         //		nErr = AdsGetLocalAddress(&bfAddr);
         // if (nErr) {
         //	//printf(m_lastError, "Error: AdsGetLocalAddress: %d\n", nErr);
@@ -79,7 +88,7 @@ namespace device { namespace beckhoff {
         USHORT nDeviceState;
         {
             std::lock_guard<std::mutex> lock(m_ads_mutex);
-            nErr = AdsSyncReadStateReq(&m_Addr, &nAdsState, &nDeviceState);
+            nErr = AdsReadState(nAdsState, nDeviceState);
         }
         if (nErr) {
             //(m_lastError, "Error: AdsSyncReadStateReq:  %d\n", nErr);
@@ -94,7 +103,7 @@ namespace device { namespace beckhoff {
             nAdsState = ADSSTATE_RUN;
             {
                 std::lock_guard<std::mutex> lock(m_ads_mutex);
-                nErr = AdsSyncWriteControlReq(&m_Addr, nAdsState, nDeviceState, 0, NULL);
+                nErr = AdsWriteControl(nAdsState, nDeviceState, 0, nullptr);
             }
             if (nErr) {
                 // printf(m_lastError, "Error: AdsSyncWriteControlReq: ", nErr);
@@ -138,7 +147,11 @@ namespace device { namespace beckhoff {
         {
             std::lock_guard<std::mutex> lock(m_ads_mutex);
             if (m_port_open) {
-                nErr = AdsPortClose();
+                if (m_direct_mode) {
+                    m_direct_ads.Close();
+                } else {
+                    nErr = AdsPortClose();
+                }
                 m_port_open = false;
             }
         }
@@ -395,6 +408,58 @@ namespace device { namespace beckhoff {
 
     // ================================================================================
 
+    std::uint32_t Beckhoff_Motor::AdsReadState(
+        std::uint16_t &adsState, std::uint16_t &deviceState)
+    {
+        if (m_direct_mode) return m_direct_ads.ReadState(adsState, deviceState);
+        return static_cast<std::uint32_t>(
+            AdsSyncReadStateReq(&m_Addr, &adsState, &deviceState));
+    }
+
+    std::uint32_t Beckhoff_Motor::AdsWriteControl(std::uint16_t adsState,
+        std::uint16_t deviceState, std::uint32_t length, const void *data)
+    {
+        if (m_direct_mode)
+            return m_direct_ads.WriteControl(adsState, deviceState, length, data);
+        return static_cast<std::uint32_t>(AdsSyncWriteControlReq(
+            &m_Addr, adsState, deviceState, length, const_cast<void *>(data)));
+    }
+
+    std::uint32_t Beckhoff_Motor::AdsRead(std::uint32_t indexGroup,
+        std::uint32_t indexOffset, std::uint32_t length, void *data)
+    {
+        if (m_direct_mode)
+            return m_direct_ads.Read(indexGroup, indexOffset, length, data);
+        return static_cast<std::uint32_t>(
+            AdsSyncReadReq(&m_Addr, indexGroup, indexOffset, length, data));
+    }
+
+    std::uint32_t Beckhoff_Motor::AdsWrite(std::uint32_t indexGroup,
+        std::uint32_t indexOffset, std::uint32_t length, const void *data)
+    {
+        if (m_direct_mode)
+            return m_direct_ads.Write(indexGroup, indexOffset, length, data);
+        return static_cast<std::uint32_t>(AdsSyncWriteReq(
+            &m_Addr, indexGroup, indexOffset, length, const_cast<void *>(data)));
+    }
+
+    std::uint32_t Beckhoff_Motor::AdsReadWrite(std::uint32_t indexGroup,
+        std::uint32_t indexOffset, std::uint32_t readLength, void *readData,
+        std::uint32_t writeLength, const void *writeData, std::uint32_t *bytesRead)
+    {
+        if (m_direct_mode) {
+            return m_direct_ads.ReadWrite(indexGroup, indexOffset, readLength, readData,
+                writeLength, writeData, bytesRead);
+        }
+        unsigned long nativeBytesRead = 0;
+        const auto result = static_cast<std::uint32_t>(AdsSyncReadWriteReqEx(
+            &m_Addr, indexGroup, indexOffset, readLength, readData, writeLength,
+            const_cast<void *>(writeData), &nativeBytesRead));
+        if (bytesRead != nullptr)
+            *bytesRead = static_cast<std::uint32_t>(nativeBytesRead);
+        return result;
+    }
+
     std::uint32_t Beckhoff_Motor::QuerySymbolInfo(
         const char *paraName, AdsSymbolInfo &info)
     {
@@ -402,15 +467,14 @@ namespace device { namespace beckhoff {
         if (!IsOpen()) return ADSERR_CLIENT_PORTNOTOPEN;
 
         std::array<std::uint8_t, 4096> buffer{};
-        unsigned long bytesRead = 0;
+        std::uint32_t bytesRead = 0;
         const auto nameLength = static_cast<unsigned long>(std::strlen(paraName) + 1);
         std::lock_guard<std::mutex> lock(m_ads_mutex);
         if (!m_port_open) return ADSERR_CLIENT_PORTNOTOPEN;
 
-        const auto result = static_cast<std::uint32_t>(AdsSyncReadWriteReqEx(
-            &m_Addr, ADSIGRP_SYM_INFOBYNAMEEX, 0,
+        const auto result = AdsReadWrite(ADSIGRP_SYM_INFOBYNAMEEX, 0,
             static_cast<unsigned long>(buffer.size()), buffer.data(),
-            nameLength, const_cast<char *>(paraName), &bytesRead));
+            nameLength, paraName, &bytesRead);
         if (result != ADSERR_NOERR) return result;
         if (bytesRead < sizeof(AdsSymbolEntry)) return ADSERR_DEVICE_INVALIDSIZE;
 
@@ -530,9 +594,8 @@ namespace device { namespace beckhoff {
         if (!m_port_open) return ADSERR_CLIENT_PORTNOTOPEN;
 
         const auto nameLength = static_cast<unsigned long>(std::strlen(paraName) + 1);
-        const auto result = static_cast<std::uint32_t>(AdsSyncReadWriteReq(&m_Addr,
-            ADSIGRP_SYM_HNDBYNAME, 0, sizeof(handle), &handle, nameLength,
-            const_cast<char *>(paraName)));
+        const auto result = AdsReadWrite(ADSIGRP_SYM_HNDBYNAME, 0,
+            sizeof(handle), &handle, nameLength, paraName);
         if (result == ADSERR_NOERR) m_symbol_handles.emplace(paraName, handle);
         return result;
     }
@@ -585,11 +648,11 @@ namespace device { namespace beckhoff {
 
             const auto resultBytes = count * sizeof(std::uint32_t) + payloadSize;
             std::vector<std::uint8_t> sumResult(resultBytes, 0);
-            const auto result = static_cast<std::uint32_t>(AdsSyncReadWriteReq(
-                &m_Addr, ADSIGRP_SUMUP_READ, static_cast<unsigned long>(count),
+            const auto result = AdsReadWrite(
+                ADSIGRP_SUMUP_READ, static_cast<unsigned long>(count),
                 static_cast<unsigned long>(sumResult.size()), sumResult.data(),
                 static_cast<unsigned long>(sumRequest.size() * sizeof(std::uint32_t)),
-                sumRequest.data()));
+                sumRequest.data());
             if (result == ADSERR_DEVICE_SRVNOTSUPP || result == ADSERR_DEVICE_INVALIDGRP) {
                 m_sum_read_supported = false;
                 fallBackToSequential = true;
@@ -607,7 +670,7 @@ namespace device { namespace beckhoff {
                         std::memcpy(requests[i].data,
                             sumResult.data() + dataOffset, requests[i].length);
                     } else {
-                        AdsSyncWriteReq(&m_Addr, ADSIGRP_SYM_RELEASEHND, 0,
+                        AdsWrite(ADSIGRP_SYM_RELEASEHND, 0,
                             sizeof(handles[i]), &handles[i]);
                         m_symbol_handles.erase(requests[i].name);
                     }
@@ -637,10 +700,9 @@ namespace device { namespace beckhoff {
         const auto handleResult = SymbolHandle(paraName, handle);
         if (handleResult != ADSERR_NOERR) return handleResult;
 
-        const auto result = static_cast<std::uint32_t>(
-            AdsSyncReadReq(&m_Addr, ADSIGRP_SYM_VALBYHND, handle, length, data));
+        const auto result = AdsRead(ADSIGRP_SYM_VALBYHND, handle, length, data);
         if (result != ADSERR_NOERR) {
-            AdsSyncWriteReq(&m_Addr, ADSIGRP_SYM_RELEASEHND, 0, sizeof(handle), &handle);
+            AdsWrite(ADSIGRP_SYM_RELEASEHND, 0, sizeof(handle), &handle);
             m_symbol_handles.erase(paraName);
         }
         return result;
@@ -657,10 +719,9 @@ namespace device { namespace beckhoff {
         const auto handleResult = SymbolHandle(paraName, handle);
         if (handleResult != ADSERR_NOERR) return handleResult;
 
-        const auto result = static_cast<std::uint32_t>(AdsSyncWriteReq(&m_Addr,
-            ADSIGRP_SYM_VALBYHND, handle, length, const_cast<void *>(data)));
+        const auto result = AdsWrite(ADSIGRP_SYM_VALBYHND, handle, length, data);
         if (result != ADSERR_NOERR) {
-            AdsSyncWriteReq(&m_Addr, ADSIGRP_SYM_RELEASEHND, 0, sizeof(handle), &handle);
+            AdsWrite(ADSIGRP_SYM_RELEASEHND, 0, sizeof(handle), &handle);
             m_symbol_handles.erase(paraName);
         }
         return result;
@@ -672,8 +733,7 @@ namespace device { namespace beckhoff {
         if (m_port_open) {
             for (const auto &entry : m_symbol_handles) {
                 auto handle = entry.second;
-                AdsSyncWriteReq(
-                    &m_Addr, ADSIGRP_SYM_RELEASEHND, 0, sizeof(handle), &handle);
+                AdsWrite(ADSIGRP_SYM_RELEASEHND, 0, sizeof(handle), &handle);
             }
         }
         m_symbol_handles.clear();

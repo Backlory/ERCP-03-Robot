@@ -47,7 +47,10 @@ namespace ercp {
 
             for ( int i = 0; i < 5; i++ ) {
                 if (bIsBeckhoffRun = beckhoff::Beckhoff_Motor::GetInstance().OpenConn(
-                    settings.Device.Beckhoff.Addr(), settings.Device.Beckhoff.Port()))
+                    settings.Device.Beckhoff.Addr(), settings.Device.Beckhoff.Port(),
+                    settings.Device.Beckhoff.Transport(),
+                    settings.Device.Beckhoff.TcpHost(),
+                    settings.Device.Beckhoff.TcpPort()))
                     break;
 
                 boost::this_thread::sleep_for(boost::chrono::milliseconds(1000));

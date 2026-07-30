@@ -172,6 +172,9 @@ namespace ercp {
                 BEGIN_SUB_NS("beckhoff")
                     CONFIG(Device.Beckhoff.Addr,    "address")
                     CONFIG(Device.Beckhoff.Port,    "port")
+                    CONFIG(Device.Beckhoff.Transport, "transport")
+                    CONFIG(Device.Beckhoff.TcpHost,   "tcp_host")
+                    CONFIG(Device.Beckhoff.TcpPort,   "tcp_port")
                 END_SUB_NS()
             END_NS()
             // clang-format on
@@ -264,6 +267,12 @@ void make_prop_info()
                 .set_comment(u8"倍福控制器地址。");
             beckhoff.emplace("port", types::_int, 851)
                 .set_comment(u8"倍福控制器端口。");
+            beckhoff.emplace("transport", types::_string, std::string("twincat"))
+                .set_comment(u8"ADS传输：twincat或direct。");
+            beckhoff.emplace("tcp_host", types::_string, std::string("127.0.0.1"))
+                .set_comment(u8"direct模式的ADS/TCP主机。");
+            beckhoff.emplace("tcp_port", types::_int, 48898)
+                .set_comment(u8"direct模式的ADS/TCP端口。");
         }
     }
 

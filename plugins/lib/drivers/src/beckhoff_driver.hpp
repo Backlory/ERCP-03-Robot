@@ -14,6 +14,7 @@
 #include "Device.hpp"
 #include "beckhoff_feedback_layout.hpp"
 #include "beckhoff_snapshot.hpp"
+#include "direct_ads_transport.hpp"
 #include "yunsbot_config.h"
 
 #include <windows.h> //windowsAPI的函数声明和宏
@@ -41,7 +42,8 @@ namespace device { namespace beckhoff {
         ~Beckhoff_Motor();
 
         // 打开关闭链接
-        bool OpenConn(string sIPAddr, int iPort);
+        bool OpenConn(string sIPAddr, int iPort, const string &transport = "twincat",
+            const string &tcpHost = "127.0.0.1", int tcpPort = 48898);
         bool CloseConn();
 
         bool IsOpen() const { return m_bIsOpen.load(std::memory_order_acquire); }
@@ -113,6 +115,16 @@ namespace device { namespace beckhoff {
         bool ValidateSymbolSize(const char *paraName, std::size_t expectedSize);
         bool ValidateRobotFeedbackLayout();
         void ReleaseSymbolHandles();
+        std::uint32_t AdsReadState(std::uint16_t &adsState, std::uint16_t &deviceState);
+        std::uint32_t AdsWriteControl(std::uint16_t adsState, std::uint16_t deviceState,
+            std::uint32_t length, const void *data);
+        std::uint32_t AdsRead(std::uint32_t indexGroup, std::uint32_t indexOffset,
+            std::uint32_t length, void *data);
+        std::uint32_t AdsWrite(std::uint32_t indexGroup, std::uint32_t indexOffset,
+            std::uint32_t length, const void *data);
+        std::uint32_t AdsReadWrite(std::uint32_t indexGroup, std::uint32_t indexOffset,
+            std::uint32_t readLength, void *readData, std::uint32_t writeLength,
+            const void *writeData, std::uint32_t *bytesRead = nullptr);
 
         // 创建地址
         bool BuildAddr(string sIP, int iPort, AmsAddr &bfAddr);
@@ -133,6 +145,8 @@ namespace device { namespace beckhoff {
         // 是否打开连接
         std::atomic<bool> m_bIsOpen{false};
         bool m_port_open = false;
+        bool m_direct_mode = false;
+        DirectAdsTransport m_direct_ads;
         std::atomic<bool> m_ercp_available{false};
         std::uint32_t m_ercp_failed_polls = 0;
         std::mutex m_command_mutex;

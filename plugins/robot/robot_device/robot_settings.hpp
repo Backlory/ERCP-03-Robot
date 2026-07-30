@@ -27,6 +27,9 @@ namespace ercp {
             struct {
                 PropertyReadOnly<std::string> Addr = std::string("127.0.0.1");
                 PropertyReadOnly<int> Port = 851;
+                PropertyReadOnly<std::string> Transport = std::string("twincat");
+                PropertyReadOnly<std::string> TcpHost = std::string("127.0.0.1");
+                PropertyReadOnly<int> TcpPort = 48898;
             } Beckhoff;
         } Device;
 
