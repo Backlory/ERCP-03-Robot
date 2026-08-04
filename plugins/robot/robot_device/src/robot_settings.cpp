@@ -16,10 +16,9 @@ namespace fs = boost::filesystem;
 
 #include "include/prop.hpp"
 #include "robot_settings.hpp"
-std::vector<PropertyBase*> PropertyBase::properties;
+std::vector<PropertyBase *> PropertyBase::properties;
 
 namespace YAML {
-
 
 } // namespace YAML
 
@@ -28,110 +27,109 @@ prop_namespace prop_root;
 
 namespace ercp {
 
-    static const auto setfile = fs::current_path().string() + "\\config.yaml";
+static const auto setfile = fs::current_path().string() + "\\config.yaml";
 
-    class SettingManager : public Settings {
-    public:
-        static SettingManager &Get()
-        {
-            static SettingManager _set;
-            return _set;
-        }
-
-        int LoadSettings(bool reload = true);
-        bool SaveSettings();
-        YAML::Node GetSource();
-        bool UpdateSource(YAML::Node);
-
-    protected:
-        SettingManager();
-        SettingManager(const SettingManager &) = delete;
-
-    private:
-        int Parse(YAML::Node &ret, const YAML::Node &node = YAML::Node());
-
-    public:
-        /// <summary>
-        /// 0 = no file, -1 = load failed, 1 = load succeed
-        /// </summary>
-        std::atomic_int is_loaded = { 0 };
-    };
-
-    SettingManager::SettingManager()
+class SettingManager : public Settings {
+public:
+    static SettingManager &Get()
     {
-        void make_prop_info();
-        make_prop_info();
-        LoadSettings();
+        static SettingManager _set;
+        return _set;
     }
 
-    int SettingManager::LoadSettings(bool reload)
-    {
-        if (!reload && is_loaded > 0) {
-            return is_loaded;
-        }
-        try {
-            if (!fs::exists(setfile)) {
-                is_loaded = 0;
-                return is_loaded;
-            }
-            // Load settings from yaml file.
-            YAML::Node set;
-            is_loaded = Parse(set, YAML::LoadFile(setfile));
-            if (is_loaded < 0) {
-                // M5: 解析失败不再静默当成功(否则 basic.master 等回落默认值),
-                //     向上返回 -1,由启动流程拒绝进入运行态(见 RobotSystem/main.cpp)。
-                ROBOT_ERROR(true, "Failed to parse settings file: " << setfile)
-            }
-        } catch (std::exception &e) {
-            is_loaded = -1;
-            ROBOT_ERROR(true,
-                "Failed to load settings file: " << setfile << " (" << e.what() << ")")
-        }
+    int LoadSettings(bool reload = true);
+    bool SaveSettings();
+    YAML::Node GetSource();
+    bool UpdateSource(YAML::Node);
+
+protected:
+    SettingManager();
+    SettingManager(const SettingManager &) = delete;
+
+private:
+    int Parse(YAML::Node &ret, const YAML::Node &node = YAML::Node());
+
+public:
+    /// <summary>
+    /// 0 = no file, -1 = load failed, 1 = load succeed
+    /// </summary>
+    std::atomic_int is_loaded = {0};
+};
+
+SettingManager::SettingManager()
+{
+    void make_prop_info();
+    make_prop_info();
+    LoadSettings();
+}
+
+int SettingManager::LoadSettings(bool reload)
+{
+    if (!reload && is_loaded > 0) {
         return is_loaded;
     }
-
-    YAML::Node SettingManager::GetSource()
-    {
-        YAML::Node config;
-        if (Parse(config) > 0) {
-            return config;
+    try {
+        if (!fs::exists(setfile)) {
+            is_loaded = 0;
+            return is_loaded;
         }
-        return YAML::Node();
-    }
-
-    bool SettingManager::UpdateSource(YAML::Node config)
-    {
+        // Load settings from yaml file.
         YAML::Node set;
-        is_loaded = Parse(set, config);
-        return is_loaded > 0 && SaveSettings();
+        is_loaded = Parse(set, YAML::LoadFile(setfile));
+        if (is_loaded < 0) {
+            // M5: 解析失败不再静默当成功(否则 basic.master 等回落默认值),
+            //     向上返回 -1,由启动流程拒绝进入运行态(见 RobotSystem/main.cpp)。
+            ROBOT_ERROR(true, "Failed to parse settings file: " << setfile)
+        }
+    } catch (std::exception &e) {
+        is_loaded = -1;
+        ROBOT_ERROR(true, "Failed to load settings file: " << setfile << " (" << e.what() << ")")
     }
+    return is_loaded;
+}
 
-    int SettingManager::Parse(YAML::Node &config, const YAML::Node &input)
-    {
-        config = input;
-        //---------------------------------------------------------------------
+YAML::Node SettingManager::GetSource()
+{
+    YAML::Node config;
+    if (Parse(config) > 0) {
+        return config;
+    }
+    return YAML::Node();
+}
+
+bool SettingManager::UpdateSource(YAML::Node config)
+{
+    YAML::Node set;
+    is_loaded = Parse(set, config);
+    return is_loaded > 0 && SaveSettings();
+}
+
+int SettingManager::Parse(YAML::Node &config, const YAML::Node &input)
+{
+    config = input;
+    //---------------------------------------------------------------------
 #define BEGIN_NS(ns)                                                                               \
     {                                                                                              \
         const std::string _ns = ns;                                                                \
         if (!config[_ns])                                                                          \
             config[_ns] = YAML::Node();                                                            \
         auto cfg = config[_ns];
-        //---------------------------------------------------------------------
+    //---------------------------------------------------------------------
 #define END_NS()                                                                                   \
     config[_ns] = cfg;                                                                             \
     }
-        //---------------------------------------------------------------------
+    //---------------------------------------------------------------------
 #define BEGIN_SUB_NS(ns2)                                                                          \
     {                                                                                              \
         const std::string _ns2 = ns2;                                                              \
         if (!config[_ns][_ns2])                                                                    \
             config[_ns][_ns2] = YAML::Node();                                                      \
         auto cfg = config[_ns][_ns2];
-        //---------------------------------------------------------------------
+    //---------------------------------------------------------------------
 #define END_SUB_NS()                                                                               \
     config[_ns][_ns2] = cfg;                                                                       \
     }
-        //---------------------------------------------------------------------
+    //---------------------------------------------------------------------
 #define CONFIG(v, key)                                                                             \
     {                                                                                              \
         if (cfg[key]) {                                                                            \
@@ -155,10 +153,10 @@ namespace ercp {
             cfg[key] = v();                                                                        \
         }                                                                                          \
     }
-        //---------------------------------------------------------------------
+    //---------------------------------------------------------------------
 
-        try {
-            // clang-format off
+    try {
+        // clang-format off
             BEGIN_NS("basic")
                 CONFIG(Basic.Verbose,   "verbose")
                 CONFIG(Basic.Master,    "master")
@@ -177,62 +175,77 @@ namespace ercp {
                     CONFIG(Device.Beckhoff.TcpPort,   "tcp_port")
                 END_SUB_NS()
             END_NS()
-            // clang-format on
+        // clang-format on
 
-        } catch (std::exception &e) {
-            config.reset();
-            return -1;
-        }
+    } catch (std::exception &e) {
+        config.reset();
+        return -1;
+    }
 #undef BEGIN_NS
 #undef END_NS
 #undef CONFIG
 #undef CONFIG_ARRAY
-        return 1;
+    return 1;
+}
+
+bool SettingManager::SaveSettings()
+{
+    YAML::Node config;
+    if (Parse(config) > 0) {
+        std::ofstream(setfile) << config;
+        return true;
     }
+    return false;
+}
 
-    bool SettingManager::SaveSettings()
-    {
-        YAML::Node config;
-        if (Parse(config) > 0) {
-            std::ofstream(setfile) << config;
-            return true;
-        }
-        return false;
+ROBOT_API_MEMBER const Settings &GetSettings()
+{
+    return SettingManager::Get();
+}
+
+ROBOT_API_MEMBER std::string GetSettingsPath()
+{
+    return setfile;
+}
+
+ROBOT_API int LoadSettings(bool reload)
+{
+    return SettingManager::Get().LoadSettings(reload);
+}
+
+ROBOT_API void SaveSettings()
+{
+    SettingManager::Get().SaveSettings();
+}
+
+ROBOT_API bool ParseIPAddress(const std::string &source, std::string &addr, size_t &port)
+{
+    static const std::regex ip_regex("^((?:[0-9]{1,3}\\.){3}[0-9]{1,3})(?::([0-9]+))?$");
+    std::smatch base_match;
+    if (std::regex_match(source, base_match, ip_regex)) {
+        if (base_match.size() >= 2)
+            addr = base_match[1].str();
+        if (base_match.size() >= 3 && base_match[2].length())
+            port = std::stoi(base_match[2].str());
+        return true;
     }
+    return false;
+}
 
-    ROBOT_API_MEMBER const Settings &GetSettings() { return SettingManager::Get(); }
+ROBOT_API_MEMBER YAML::Node GetSettingSource()
+{
+    return SettingManager::Get().GetSource();
+}
 
-    ROBOT_API_MEMBER std::string GetSettingsPath() { return setfile; }
+ROBOT_API bool UpdateSettingSource(YAML::Node config)
+{
+    return SettingManager::Get().UpdateSource(config);
+}
 
-    ROBOT_API int LoadSettings(bool reload) { return SettingManager::Get().LoadSettings(reload); }
-
-    ROBOT_API void SaveSettings() { SettingManager::Get().SaveSettings(); }
-
-    ROBOT_API bool ParseIPAddress(const std::string &source, std::string &addr, size_t &port)
-    {
-        static const std::regex ip_regex("^((?:[0-9]{1,3}\\.){3}[0-9]{1,3})(?::([0-9]+))?$");
-        std::smatch base_match;
-        if (std::regex_match(source, base_match, ip_regex)) {
-            if (base_match.size() >= 2)
-                addr = base_match[1].str();
-            if (base_match.size() >= 3 && base_match[2].length())
-                port = std::stoi(base_match[2].str());
-            return true;
-        }
-        return false;
-    }
-
-    ROBOT_API_MEMBER YAML::Node GetSettingSource() { return SettingManager::Get().GetSource(); }
-
-    ROBOT_API bool UpdateSettingSource(YAML::Node config)
-    {
-        return SettingManager::Get().UpdateSource(config);
-    }
-
-    ROBOT_API_MEMBER YAML::Node GetSettingConfig()
-    {
-        return prop::prop_namespace::generate(prop_root);
-    }
+ROBOT_API_MEMBER YAML::Node GetSettingConfig()
+{
+    return prop::prop_namespace::generate(prop_root);
+}
 
 } // namespace ercp
 
@@ -276,5 +289,5 @@ void make_prop_info()
         }
     }
 
-    // clang-format off
+    // clang-format on
 }

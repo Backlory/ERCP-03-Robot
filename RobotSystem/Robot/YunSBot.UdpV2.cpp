@@ -11,14 +11,16 @@ namespace ercp::robot_udp_v2 {
 std::uint64_t UnixNowNs()
 {
     return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
+                                          std::chrono::system_clock::now().time_since_epoch())
+                                          .count());
 }
 
 std::uint64_t MakeSessionId()
 {
     std::random_device random;
     std::uint64_t result = (static_cast<std::uint64_t>(random()) << 32) | random();
-    if (result == 0) result = UnixNowNs() ^ 0x455243505632ull;
+    if (result == 0)
+        result = UnixNowNs() ^ 0x455243505632ull;
     return result == 0 ? 1 : result;
 }
 
@@ -40,7 +42,8 @@ CommandReceiver::CommandReceiver(protocol::Source expected_source)
 void CommandReceiver::RetireSession(std::uint64_t session_id)
 {
     constexpr std::size_t kRetiredSessionLimit = 32;
-    if (session_id == 0 || !retired_session_ids_.insert(session_id).second) return;
+    if (session_id == 0 || !retired_session_ids_.insert(session_id).second)
+        return;
 
     retired_session_order_.push_back(session_id);
     while (retired_session_order_.size() > kRetiredSessionLimit) {
@@ -56,8 +59,7 @@ void CommandReceiver::RecordRejected()
     ++stats_.rejected;
 }
 
-bool CommandReceiver::AcceptDatagram(const std::uint8_t *data, std::size_t size,
-    std::string *error)
+bool CommandReceiver::AcceptDatagram(const std::uint8_t *data, std::size_t size, std::string *error)
 {
     return Accept(data, size, error);
 }
@@ -79,7 +81,8 @@ bool CommandReceiver::Accept(const std::uint8_t *data, std::size_t size, std::st
     if (header.source != expected_source_) {
         std::lock_guard<std::mutex> lock(mutex_);
         ++stats_.rejected;
-        if (error != nullptr) *error = "unexpected command source";
+        if (error != nullptr)
+            *error = "unexpected command source";
         return false;
     }
 
@@ -89,7 +92,8 @@ bool CommandReceiver::Accept(const std::uint8_t *data, std::size_t size, std::st
 
     if (retired_session_ids_.count(header.session_id) != 0) {
         ++stats_.rejected;
-        if (error != nullptr) *error = "retired command session";
+        if (error != nullptr)
+            *error = "retired command session";
         return false;
     }
 
@@ -119,7 +123,7 @@ bool CommandReceiver::Accept(const std::uint8_t *data, std::size_t size, std::st
     }
 
     latest_payload_ = payload;
-    latest_metadata_ = { header.source, header.session_id, header.sequence, received_unix_ns };
+    latest_metadata_ = {header.source, header.session_id, header.sequence, received_unix_ns};
     latest_received_ = received;
     has_latest_ = true;
     stats_.last_sequence = header.sequence;
@@ -128,14 +132,17 @@ bool CommandReceiver::Accept(const std::uint8_t *data, std::size_t size, std::st
     return true;
 }
 
-bool CommandReceiver::TryGet(protocol::ControlPayload &payload, CommandMetadata &metadata,
-    double max_age_seconds) const
+bool CommandReceiver::TryGet(protocol::ControlPayload &payload,
+                             CommandMetadata &metadata,
+                             double max_age_seconds) const
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!has_latest_ || max_age_seconds < 0) return false;
-    const auto age = std::chrono::duration<double>(std::chrono::steady_clock::now()
-        - latest_received_).count();
-    if (age > max_age_seconds) return false;
+    if (!has_latest_ || max_age_seconds < 0)
+        return false;
+    const auto age =
+        std::chrono::duration<double>(std::chrono::steady_clock::now() - latest_received_).count();
+    if (age > max_age_seconds)
+        return false;
     payload = latest_payload_;
     metadata = latest_metadata_;
     return true;
@@ -144,7 +151,8 @@ bool CommandReceiver::TryGet(protocol::ControlPayload &payload, CommandMetadata 
 bool CommandReceiver::Latest(protocol::ControlPayload &payload, CommandMetadata &metadata) const
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!has_latest_) return false;
+    if (!has_latest_)
+        return false;
     payload = latest_payload_;
     metadata = latest_metadata_;
     return true;
@@ -164,8 +172,11 @@ ReceiveStats CommandReceiver::Stats() const
 }
 
 void AppliedCommandTracker::MarkAttempt(const protocol::ControlPayload &command,
-    const CommandMetadata &metadata, protocol::ApplyResult result, std::uint32_t ads_error,
-    std::uint64_t applied_unix_ns, bool write_succeeded)
+                                        const CommandMetadata &metadata,
+                                        protocol::ApplyResult result,
+                                        std::uint32_t ads_error,
+                                        std::uint64_t applied_unix_ns,
+                                        bool write_succeeded)
 {
     protocol::AppliedCommandRecord record;
     record.command = command;

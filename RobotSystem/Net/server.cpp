@@ -28,7 +28,7 @@ RequestHandlerFactory::RequestHandlerFactory(int verbose)
 Poco::Net::HTTPRequestHandler *RequestHandlerFactory::createRequestHandler(const Request &req)
 {
     ROBOT_INFO(_verbose > 1,
-        "[" << req.getMethod() << "] (" << req.getURI() << ") from " << req.clientAddress())
+               "[" << req.getMethod() << "] (" << req.getURI() << ") from " << req.clientAddress())
     return new PageHandler();
 }
 
@@ -46,7 +46,10 @@ void HttpServer::initialize(Application &self)
     ServerApplication::initialize(self);
 }
 
-void HttpServer::uninitialize() { ServerApplication::uninitialize(); }
+void HttpServer::uninitialize()
+{
+    ServerApplication::uninitialize();
+}
 
 int HttpServer::main(const std::vector<std::string> &args)
 {
@@ -56,13 +59,15 @@ int HttpServer::main(const std::vector<std::string> &args)
     // 1. Bind a ServerSocket with an address
     // 监听网卡可经 basic.bind 收窄；默认 0.0.0.0/空 保持原全网卡绑定行为(不改可达性)。
     const std::string bindAddr = ercp::GetSettings().Basic.Bind();
-    Poco::Net::ServerSocket serverSocket = (bindAddr.empty() || bindAddr == "0.0.0.0")
-        ? Poco::Net::ServerSocket(port)
-        : Poco::Net::ServerSocket(Poco::Net::SocketAddress(bindAddr, port));
+    Poco::Net::ServerSocket serverSocket =
+        (bindAddr.empty() || bindAddr == "0.0.0.0")
+            ? Poco::Net::ServerSocket(port)
+            : Poco::Net::ServerSocket(Poco::Net::SocketAddress(bindAddr, port));
 
     // 2. Pass the ServerSocket to a HttpServer
-    Poco::Net::HTTPServer server(
-        new RequestHandlerFactory(_verbose), serverSocket, new Poco::Net::HTTPServerParams());
+    Poco::Net::HTTPServer server(new RequestHandlerFactory(_verbose),
+                                 serverSocket,
+                                 new Poco::Net::HTTPServerParams());
 
     // 3. Start the HttpServer
     server.start();
@@ -130,8 +135,8 @@ Json Handler::innerHandler(Request &req)
                 return ret;
             }
 
-            std::string src(
-                std::istreambuf_iterator<char>(req.stream()), std::istreambuf_iterator<char>());
+            std::string src(std::istreambuf_iterator<char>(req.stream()),
+                            std::istreambuf_iterator<char>());
             Poco::JSON::Parser parser;
             auto json = parser.parse(src);
             pobj = json.extract<Poco::JSON::Object::Ptr>();

@@ -85,5 +85,4 @@ struct beckhoff_follow_cmd {
 };
 
 static_assert(sizeof(beckhoff_follow_cmd) == 88,
-    "beckhoff_follow_cmd must stay 88 bytes for PLC wire layout");
-
+              "beckhoff_follow_cmd must stay 88 bytes for PLC wire layout");

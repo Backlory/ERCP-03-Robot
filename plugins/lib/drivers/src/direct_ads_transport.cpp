@@ -9,7 +9,8 @@
 
 #include "direct_ads_transport.hpp"
 
-namespace device { namespace beckhoff {
+namespace device {
+namespace beckhoff {
 namespace {
 
 constexpr std::uint16_t kAdsCommandRead = 2;
@@ -35,25 +36,23 @@ void AppendU32(std::vector<std::uint8_t> &buffer, std::uint32_t value)
 
 std::uint16_t ReadU16(const std::uint8_t *data)
 {
-    return static_cast<std::uint16_t>(data[0])
-        | static_cast<std::uint16_t>(data[1]) << 8;
+    return static_cast<std::uint16_t>(data[0]) | static_cast<std::uint16_t>(data[1]) << 8;
 }
 
 std::uint32_t ReadU32(const std::uint8_t *data)
 {
-    return static_cast<std::uint32_t>(data[0])
-        | static_cast<std::uint32_t>(data[1]) << 8
-        | static_cast<std::uint32_t>(data[2]) << 16
-        | static_cast<std::uint32_t>(data[3]) << 24;
+    return static_cast<std::uint32_t>(data[0]) | static_cast<std::uint32_t>(data[1]) << 8 |
+           static_cast<std::uint32_t>(data[2]) << 16 | static_cast<std::uint32_t>(data[3]) << 24;
 }
 
 bool SendAll(SOCKET socket, const std::uint8_t *data, std::size_t size)
 {
     while (size != 0) {
-        const auto chunk = static_cast<int>((std::min)(
-            size, static_cast<std::size_t>((std::numeric_limits<int>::max)())));
+        const auto chunk = static_cast<int>(
+            (std::min)(size, static_cast<std::size_t>((std::numeric_limits<int>::max)())));
         const int sent = send(socket, reinterpret_cast<const char *>(data), chunk, 0);
-        if (sent == SOCKET_ERROR || sent == 0) return false;
+        if (sent == SOCKET_ERROR || sent == 0)
+            return false;
         data += sent;
         size -= static_cast<std::size_t>(sent);
     }
@@ -63,10 +62,11 @@ bool SendAll(SOCKET socket, const std::uint8_t *data, std::size_t size)
 bool ReceiveAll(SOCKET socket, std::uint8_t *data, std::size_t size)
 {
     while (size != 0) {
-        const auto chunk = static_cast<int>((std::min)(
-            size, static_cast<std::size_t>((std::numeric_limits<int>::max)())));
+        const auto chunk = static_cast<int>(
+            (std::min)(size, static_cast<std::size_t>((std::numeric_limits<int>::max)())));
         const int received = recv(socket, reinterpret_cast<char *>(data), chunk, 0);
-        if (received == SOCKET_ERROR || received == 0) return false;
+        if (received == SOCKET_ERROR || received == 0)
+            return false;
         data += received;
         size -= static_cast<std::size_t>(received);
     }
@@ -81,10 +81,12 @@ struct DirectAdsTransport::Impl {
     AmsAddr target{};
     std::uint32_t invokeId = 0;
 
-    std::uint32_t Exchange(std::uint16_t command, const std::vector<std::uint8_t> &request,
-        std::vector<std::uint8_t> &response)
+    std::uint32_t Exchange(std::uint16_t command,
+                           const std::vector<std::uint8_t> &request,
+                           std::vector<std::uint8_t> &response)
     {
-        if (socket == INVALID_SOCKET) return ADSERR_CLIENT_PORTNOTOPEN;
+        if (socket == INVALID_SOCKET)
+            return ADSERR_CLIENT_PORTNOTOPEN;
 
         const std::uint32_t invoke = ++invokeId;
         std::vector<std::uint8_t> frame;
@@ -126,7 +128,8 @@ struct DirectAdsTransport::Impl {
         if (ReadU16(ams.data() + 16) != command || ReadU32(ams.data() + 28) != invoke)
             return ADSERR_CLIENT_SYNCRESINVALID;
         const auto amsError = ReadU32(ams.data() + 24);
-        if (amsError != 0) return amsError;
+        if (amsError != 0)
+            return amsError;
         const auto payloadLength = ReadU32(ams.data() + 20);
         if (payloadLength != ams.size() - kAmsHeaderSize)
             return ADSERR_CLIENT_SYNCRESINVALID;
@@ -144,19 +147,24 @@ struct DirectAdsTransport::Impl {
     }
 };
 
-DirectAdsTransport::DirectAdsTransport() : impl_(new Impl) {}
+DirectAdsTransport::DirectAdsTransport()
+    : impl_(new Impl)
+{
+}
 
 DirectAdsTransport::~DirectAdsTransport()
 {
     Close();
 }
 
-bool DirectAdsTransport::Connect(
-    const std::string &host, std::uint16_t tcpPort, const AmsAddr &target)
+bool DirectAdsTransport::Connect(const std::string &host,
+                                 std::uint16_t tcpPort,
+                                 const AmsAddr &target)
 {
     Close();
     WSADATA data{};
-    if (WSAStartup(MAKEWORD(2, 2), &data) != 0) return false;
+    if (WSAStartup(MAKEWORD(2, 2), &data) != 0)
+        return false;
     impl_->winsockStarted = true;
 
     impl_->socket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -166,21 +174,29 @@ bool DirectAdsTransport::Connect(
     }
 
     DWORD timeoutMs = 2000;
-    setsockopt(impl_->socket, SOL_SOCKET, SO_RCVTIMEO,
-        reinterpret_cast<const char *>(&timeoutMs), sizeof(timeoutMs));
-    setsockopt(impl_->socket, SOL_SOCKET, SO_SNDTIMEO,
-        reinterpret_cast<const char *>(&timeoutMs), sizeof(timeoutMs));
+    setsockopt(impl_->socket,
+               SOL_SOCKET,
+               SO_RCVTIMEO,
+               reinterpret_cast<const char *>(&timeoutMs),
+               sizeof(timeoutMs));
+    setsockopt(impl_->socket,
+               SOL_SOCKET,
+               SO_SNDTIMEO,
+               reinterpret_cast<const char *>(&timeoutMs),
+               sizeof(timeoutMs));
     BOOL noDelay = TRUE;
-    setsockopt(impl_->socket, IPPROTO_TCP, TCP_NODELAY,
-        reinterpret_cast<const char *>(&noDelay), sizeof(noDelay));
+    setsockopt(impl_->socket,
+               IPPROTO_TCP,
+               TCP_NODELAY,
+               reinterpret_cast<const char *>(&noDelay),
+               sizeof(noDelay));
 
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_port = htons(tcpPort);
-    if (inet_pton(AF_INET, host.c_str(), &address.sin_addr) != 1
-        || connect(impl_->socket, reinterpret_cast<const sockaddr *>(&address),
-               sizeof(address))
-            == SOCKET_ERROR) {
+    if (inet_pton(AF_INET, host.c_str(), &address.sin_addr) != 1 ||
+        connect(impl_->socket, reinterpret_cast<const sockaddr *>(&address), sizeof(address)) ==
+            SOCKET_ERROR) {
         Close();
         return false;
     }
@@ -203,13 +219,14 @@ bool DirectAdsTransport::IsConnected() const
     return impl_->socket != INVALID_SOCKET;
 }
 
-std::uint32_t DirectAdsTransport::ReadState(
-    std::uint16_t &adsState, std::uint16_t &deviceState)
+std::uint32_t DirectAdsTransport::ReadState(std::uint16_t &adsState, std::uint16_t &deviceState)
 {
     std::vector<std::uint8_t> response;
     const auto exchangeResult = impl_->Exchange(kAdsCommandReadState, {}, response);
-    if (exchangeResult != ADSERR_NOERR) return exchangeResult;
-    if (response.size() < 8) return ADSERR_CLIENT_SYNCRESINVALID;
+    if (exchangeResult != ADSERR_NOERR)
+        return exchangeResult;
+    if (response.size() < 8)
+        return ADSERR_CLIENT_SYNCRESINVALID;
     const auto result = ReadU32(response.data());
     if (result == ADSERR_NOERR) {
         adsState = ReadU16(response.data() + 4);
@@ -219,9 +236,12 @@ std::uint32_t DirectAdsTransport::ReadState(
 }
 
 std::uint32_t DirectAdsTransport::WriteControl(std::uint16_t adsState,
-    std::uint16_t deviceState, std::uint32_t length, const void *data)
+                                               std::uint16_t deviceState,
+                                               std::uint32_t length,
+                                               const void *data)
 {
-    if (length != 0 && data == nullptr) return ADSERR_CLIENT_INVALIDPARM;
+    if (length != 0 && data == nullptr)
+        return ADSERR_CLIENT_INVALIDPARM;
     std::vector<std::uint8_t> request;
     AppendU16(request, adsState);
     AppendU16(request, deviceState);
@@ -232,36 +252,46 @@ std::uint32_t DirectAdsTransport::WriteControl(std::uint16_t adsState,
     }
     std::vector<std::uint8_t> response;
     const auto exchangeResult = impl_->Exchange(kAdsCommandWriteControl, request, response);
-    if (exchangeResult != ADSERR_NOERR) return exchangeResult;
+    if (exchangeResult != ADSERR_NOERR)
+        return exchangeResult;
     return response.size() >= 4 ? ReadU32(response.data()) : ADSERR_CLIENT_SYNCRESINVALID;
 }
 
 std::uint32_t DirectAdsTransport::Read(std::uint32_t indexGroup,
-    std::uint32_t indexOffset, std::uint32_t length, void *data)
+                                       std::uint32_t indexOffset,
+                                       std::uint32_t length,
+                                       void *data)
 {
-    if (length != 0 && data == nullptr) return ADSERR_CLIENT_INVALIDPARM;
+    if (length != 0 && data == nullptr)
+        return ADSERR_CLIENT_INVALIDPARM;
     std::vector<std::uint8_t> request;
     AppendU32(request, indexGroup);
     AppendU32(request, indexOffset);
     AppendU32(request, length);
     std::vector<std::uint8_t> response;
     const auto exchangeResult = impl_->Exchange(kAdsCommandRead, request, response);
-    if (exchangeResult != ADSERR_NOERR) return exchangeResult;
-    if (response.size() < 8) return ADSERR_CLIENT_SYNCRESINVALID;
+    if (exchangeResult != ADSERR_NOERR)
+        return exchangeResult;
+    if (response.size() < 8)
+        return ADSERR_CLIENT_SYNCRESINVALID;
     const auto result = ReadU32(response.data());
     const auto bytesRead = ReadU32(response.data() + 4);
     if (result == ADSERR_NOERR) {
         if (bytesRead > length || response.size() != 8 + bytesRead)
             return ADSERR_CLIENT_SYNCRESINVALID;
-        if (bytesRead != 0) std::memcpy(data, response.data() + 8, bytesRead);
+        if (bytesRead != 0)
+            std::memcpy(data, response.data() + 8, bytesRead);
     }
     return result;
 }
 
 std::uint32_t DirectAdsTransport::Write(std::uint32_t indexGroup,
-    std::uint32_t indexOffset, std::uint32_t length, const void *data)
+                                        std::uint32_t indexOffset,
+                                        std::uint32_t length,
+                                        const void *data)
 {
-    if (length != 0 && data == nullptr) return ADSERR_CLIENT_INVALIDPARM;
+    if (length != 0 && data == nullptr)
+        return ADSERR_CLIENT_INVALIDPARM;
     std::vector<std::uint8_t> request;
     AppendU32(request, indexGroup);
     AppendU32(request, indexOffset);
@@ -272,16 +302,20 @@ std::uint32_t DirectAdsTransport::Write(std::uint32_t indexGroup,
     }
     std::vector<std::uint8_t> response;
     const auto exchangeResult = impl_->Exchange(kAdsCommandWrite, request, response);
-    if (exchangeResult != ADSERR_NOERR) return exchangeResult;
+    if (exchangeResult != ADSERR_NOERR)
+        return exchangeResult;
     return response.size() >= 4 ? ReadU32(response.data()) : ADSERR_CLIENT_SYNCRESINVALID;
 }
 
 std::uint32_t DirectAdsTransport::ReadWrite(std::uint32_t indexGroup,
-    std::uint32_t indexOffset, std::uint32_t readLength, void *readData,
-    std::uint32_t writeLength, const void *writeData, std::uint32_t *bytesRead)
+                                            std::uint32_t indexOffset,
+                                            std::uint32_t readLength,
+                                            void *readData,
+                                            std::uint32_t writeLength,
+                                            const void *writeData,
+                                            std::uint32_t *bytesRead)
 {
-    if ((readLength != 0 && readData == nullptr)
-        || (writeLength != 0 && writeData == nullptr))
+    if ((readLength != 0 && readData == nullptr) || (writeLength != 0 && writeData == nullptr))
         return ADSERR_CLIENT_INVALIDPARM;
     std::vector<std::uint8_t> request;
     AppendU32(request, indexGroup);
@@ -294,17 +328,22 @@ std::uint32_t DirectAdsTransport::ReadWrite(std::uint32_t indexGroup,
     }
     std::vector<std::uint8_t> response;
     const auto exchangeResult = impl_->Exchange(kAdsCommandReadWrite, request, response);
-    if (exchangeResult != ADSERR_NOERR) return exchangeResult;
-    if (response.size() < 8) return ADSERR_CLIENT_SYNCRESINVALID;
+    if (exchangeResult != ADSERR_NOERR)
+        return exchangeResult;
+    if (response.size() < 8)
+        return ADSERR_CLIENT_SYNCRESINVALID;
     const auto result = ReadU32(response.data());
     const auto actual = ReadU32(response.data() + 4);
-    if (bytesRead != nullptr) *bytesRead = actual;
+    if (bytesRead != nullptr)
+        *bytesRead = actual;
     if (result == ADSERR_NOERR) {
         if (actual > readLength || response.size() != 8 + actual)
             return ADSERR_CLIENT_SYNCRESINVALID;
-        if (actual != 0) std::memcpy(readData, response.data() + 8, actual);
+        if (actual != 0)
+            std::memcpy(readData, response.data() + 8, actual);
     }
     return result;
 }
 
-}} // namespace device::beckhoff
+}
+} // namespace device::beckhoff

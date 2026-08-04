@@ -39,13 +39,13 @@ class CommandReceiver {
 public:
     explicit CommandReceiver(protocol::Source expected_source);
 
-    bool AcceptDatagram(const std::uint8_t *data, std::size_t size,
-        std::string *error = nullptr);
+    bool AcceptDatagram(const std::uint8_t *data, std::size_t size, std::string *error = nullptr);
     bool Accept(const std::uint8_t *data, std::size_t size, std::string *error = nullptr);
     void RecordRejected();
 
-    bool TryGet(protocol::ControlPayload &payload, CommandMetadata &metadata,
-        double max_age_seconds) const;
+    bool TryGet(protocol::ControlPayload &payload,
+                CommandMetadata &metadata,
+                double max_age_seconds) const;
     bool Latest(protocol::ControlPayload &payload, CommandMetadata &metadata) const;
     bool IsOnline(double max_age_seconds) const;
 
@@ -70,9 +70,12 @@ class AppliedCommandTracker {
 public:
     AppliedCommandTracker() = default;
 
-    void MarkAttempt(const protocol::ControlPayload &payload, const CommandMetadata &metadata,
-        protocol::ApplyResult result, std::uint32_t ads_error, std::uint64_t applied_unix_ns,
-        bool write_succeeded);
+    void MarkAttempt(const protocol::ControlPayload &payload,
+                     const CommandMetadata &metadata,
+                     protocol::ApplyResult result,
+                     std::uint32_t ads_error,
+                     std::uint64_t applied_unix_ns,
+                     bool write_succeeded);
 
     protocol::AppliedCommandPayload Snapshot() const;
 

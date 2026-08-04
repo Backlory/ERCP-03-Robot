@@ -39,7 +39,9 @@ public:
                 auto &type = json.get(k.name).type();
                 if (std::find(k.types.begin(), k.types.end(), type) == k.types.end()) {
                     return fmt::format("Request member {} is supposed to be {}, but {} is given.",
-                        k.name, format_types(k.types), type.name());
+                                       k.name,
+                                       format_types(k.types),
+                                       type.name());
                 }
             }
         }
@@ -85,7 +87,6 @@ public:
     }
 };
 
-
 class robot_state : public basic_request {
 public:
     Json handler(const Json &json) override
@@ -129,8 +130,8 @@ class robot_action : public basic_request {
 public:
     robot_action()
     {
-        info.emplace_back(keys_info{ "type", { typeid(std::string) } });
-        info.emplace_back(keys_info{ "action", { typeid(std::string) } });
+        info.emplace_back(keys_info{"type", {typeid(std::string)}});
+        info.emplace_back(keys_info{"action", {typeid(std::string)}});
     }
 
     std::string checker(const Json &json) override
@@ -169,7 +170,7 @@ public:
         if (!ok) {
             // M1: 业务失败上提为信封 status=false(见 server.cpp handleRequest)
             d.set(kBusinessFailInfoKey,
-                fmt::format("Module action `{}` on `{}` failed.", action, type));
+                  fmt::format("Module action `{}` on `{}` failed.", action, type));
         }
         return d;
     }
@@ -239,7 +240,7 @@ public:
     settings_update()
     {
         //
-        info.emplace_back(keys_info{ "data", { typeid(std::string) } });
+        info.emplace_back(keys_info{"data", {typeid(std::string)}});
     }
 
     Json handler(const Json &json) override
@@ -292,13 +293,12 @@ public:
     }
 };
 
-
 class sensio_action : public basic_request {
 public:
     sensio_action()
     {
-        info.emplace_back(keys_info{ "id", { typeid(int64_t) } });
-        info.emplace_back(keys_info{ "value", { typeid(int64_t) } });
+        info.emplace_back(keys_info{"id", {typeid(int64_t)}});
+        info.emplace_back(keys_info{"value", {typeid(int64_t)}});
     }
 
     std::string checker(const Json &json) override
@@ -368,8 +368,8 @@ public:
 
     arm_moverel()
     {
-        info.emplace_back(keys_info{ "dpose", { typeid(poco_array) } });
-        info.emplace_back(keys_info{ "tcp", { typeid(bool) }, true });
+        info.emplace_back(keys_info{"dpose", {typeid(poco_array)}});
+        info.emplace_back(keys_info{"tcp", {typeid(bool)}, true});
     }
 
     std::string checker(const Json &json) override
@@ -433,8 +433,7 @@ class beckhoff_read : public basic_request {
 
 private:
 public:
-
-    std::string checker(const Json& json) override
+    std::string checker(const Json &json) override
     {
         if (!beckhoffator::isOpen()) {
             return "The Beckhoff not Open!";
@@ -453,7 +452,7 @@ public:
         return "";
     }
 
-    Json handler(const Json& json) override
+    Json handler(const Json &json) override
     {
         Json d;
         //if (json.has("type")) {
@@ -465,7 +464,7 @@ public:
         //        d.set(t.first, t.second());
         //    }
         //}
-//        d.set("status", beckhoffator::read());
+        //        d.set("status", beckhoffator::read());
 
         //d.set("status", beckhoffator::read());
         return d;
@@ -478,8 +477,7 @@ class beckhoff_write : public basic_request {
 
 private:
 public:
-
-    std::string checker(const Json& json) override
+    std::string checker(const Json &json) override
     {
         if (!beckhoffator::isOpen()) {
             return "The Beckhoff not Open!";
@@ -498,7 +496,7 @@ public:
         return "";
     }
 
-    Json handler(const Json& json) override
+    Json handler(const Json &json) override
     {
         Json d;
         //if (json.has("type")) {
@@ -519,8 +517,7 @@ class beckhoff_isopen : public basic_request {
 
 private:
 public:
-
-    std::string checker(const Json& json) override
+    std::string checker(const Json &json) override
     {
         if (!beckhoffator::isOpen()) {
             return "The Beckhoff not Open!";
@@ -539,7 +536,7 @@ public:
         return "";
     }
 
-    Json handler(const Json& json) override
+    Json handler(const Json &json) override
     {
         Json d;
         //if (json.has("type")) {
@@ -562,25 +559,26 @@ Handler::Handler()
     using vt = decltype(handlers)::mapped_type;
 
     handlers.emplace("robot",
-        vt{
-            { "info", std::make_shared<robot_info>() }, //
-            { "log", std::make_shared<robot_log>() }, //
-            { "status", std::make_shared<robot_state>() }, //
-            { "action", std::make_shared<robot_action>() }, //
-            { "init", std::make_shared<robot_init>("init") }, //
-            { "start", std::make_shared<robot_init>("start") }, //
-            { "close", std::make_shared<robot_init>("close") }, //
-            { "interrupt", std::make_shared<robot_init>("interrupt") }, //
-            { "skip", std::make_shared<robot_init>("skip") }, //
-            { "forcerecord", std::make_shared<robot_force_record>() }, //
-        });
+                     vt{
+                         {"info", std::make_shared<robot_info>()}, //
+                         {"log", std::make_shared<robot_log>()}, //
+                         {"status", std::make_shared<robot_state>()}, //
+                         {"action", std::make_shared<robot_action>()}, //
+                         {"init", std::make_shared<robot_init>("init")}, //
+                         {"start", std::make_shared<robot_init>("start")}, //
+                         {"close", std::make_shared<robot_init>("close")}, //
+                         {"interrupt", std::make_shared<robot_init>("interrupt")}, //
+                         {"skip", std::make_shared<robot_init>("skip")}, //
+                         {"forcerecord", std::make_shared<robot_force_record>()}, //
+                     });
     handlers.emplace("settings",
-        vt{
-            { "/", std::make_shared<settings_base>() }, //
-            { "data", std::make_shared<settings_data>() }, //
-            { "update", std::make_shared<settings_update>() }, //
-        });
-    handlers.emplace("motor",
+                     vt{
+                         {"/", std::make_shared<settings_base>()}, //
+                         {"data", std::make_shared<settings_data>()}, //
+                         {"update", std::make_shared<settings_update>()}, //
+                     });
+    handlers.emplace(
+        "motor",
         vt{
             //{ "/", std::make_shared<motor_base>() }, //
             //{ "status", std::make_shared<motor_status>() }, //
@@ -590,23 +588,21 @@ Handler::Handler()
             //{ "clear_faults", std::make_shared<motor_action>(motor_action::type::clear_faults) } //
         });
     handlers.emplace("sensio",
-        vt{
-            { "/", std::make_shared<sensio_base>() }, //
-            //{ "status", std::make_shared<sensio_status>() }, //
-            { "action", std::make_shared<sensio_action>() } //
-        });
+                     vt{
+                         {"/", std::make_shared<sensio_base>()}, //
+                         //{ "status", std::make_shared<sensio_status>() }, //
+                         {"action", std::make_shared<sensio_action>()} //
+                     });
     handlers.emplace("beckhoff",
-        vt{
-            {"read", std::make_shared<beckhoff_read>()},
-            {"write", std::make_shared<beckhoff_write>()},
-            {"follow", std::make_shared<beckhoff_read>()},
-            {"isopen", std::make_shared<beckhoff_isopen>()}
-        });
+                     vt{{"read", std::make_shared<beckhoff_read>()},
+                        {"write", std::make_shared<beckhoff_write>()},
+                        {"follow", std::make_shared<beckhoff_read>()},
+                        {"isopen", std::make_shared<beckhoff_isopen>()}});
     handlers.emplace("arm",
-        vt{
-            { "status", std::make_shared<arm_status>() }, //
-            { "moverel", std::make_shared<arm_moverel>() }, //
-            { "init", std::make_shared<arm_init>() }, //
-            { "stop", std::make_shared<arm_stop>() } //
-        });
+                     vt{
+                         {"status", std::make_shared<arm_status>()}, //
+                         {"moverel", std::make_shared<arm_moverel>()}, //
+                         {"init", std::make_shared<arm_init>()}, //
+                         {"stop", std::make_shared<arm_stop>()} //
+                     });
 }

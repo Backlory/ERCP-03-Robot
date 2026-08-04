@@ -10,8 +10,8 @@ class RequestHandlerFactory : public Poco::Net::HTTPRequestHandlerFactory {
 public:
     RequestHandlerFactory(int verbose = 1);
 
-    virtual Poco::Net::HTTPRequestHandler *createRequestHandler(
-        const Poco::Net::HTTPServerRequest &);
+    virtual Poco::Net::HTTPRequestHandler *
+    createRequestHandler(const Poco::Net::HTTPServerRequest &);
 
 private:
     const int _verbose;

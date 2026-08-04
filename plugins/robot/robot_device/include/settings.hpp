@@ -4,7 +4,7 @@
 #include <yaml-cpp/yaml.h>
 
 namespace ercp {
-    class SettingManager;
+class SettingManager;
 }
 
 class PropertyBase {
@@ -23,8 +23,7 @@ protected:
     static std::vector<PropertyBase *> properties;
 };
 
-template <typename T>
-class Property : public PropertyBase {
+template <typename T> class Property : public PropertyBase {
     friend class ercp::SettingManager;
 
 public:
@@ -53,8 +52,7 @@ protected:
     T value;
 };
 
-template <typename T>
-class PropertyReadOnly : public Property<T> {
+template <typename T> class PropertyReadOnly : public Property<T> {
     friend class ercp::SettingManager;
 
 public:

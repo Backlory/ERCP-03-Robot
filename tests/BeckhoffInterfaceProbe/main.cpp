@@ -14,15 +14,11 @@
 
 namespace {
 
-enum class Access {
-    ReadOnly,
-    SafeZeroWrite,
-    DangerousAction
-};
+enum class Access { ReadOnly, SafeZeroWrite, DangerousAction };
 
 struct SymbolSpec {
-    const char* name;
-    const char* expected_type;
+    const char *name;
+    const char *expected_type;
     std::uint32_t expected_size;
     Access access;
     bool required = true;
@@ -56,9 +52,18 @@ constexpr SymbolSpec kSymbols[] = {
     {"MAIN.Info_Feedback_ToMaster.Axes_Pos", "ARRAY[1..21] OF LREAL", 168, Access::ReadOnly},
     {"MAIN.Emergency_Stop_FromMaster", "DINT", 4, Access::DangerousAction},
     {"MAIN.Follow_Control_Cmd.Cmd_Follow_Comp_Joy_FromMaster", "LREAL", 8, Access::SafeZeroWrite},
-    {"MAIN.Follow_Control_Cmd.Cmd_Operator_Joy_FromMaster", "ARRAY[1..9] OF LREAL", 72, Access::SafeZeroWrite},
-    {"MAIN.Follow_Control_Cmd.Cmd_Home_Joy_FromMaster", "ARRAY[1..3] OF BOOL", 3, Access::SafeZeroWrite},
-    {"MAIN.Follow_Control_Cmd.Cmd_IO_Joy_FromMaster", "ARRAY[1..3] OF BOOL", 3, Access::SafeZeroWrite},
+    {"MAIN.Follow_Control_Cmd.Cmd_Operator_Joy_FromMaster",
+     "ARRAY[1..9] OF LREAL",
+     72,
+     Access::SafeZeroWrite},
+    {"MAIN.Follow_Control_Cmd.Cmd_Home_Joy_FromMaster",
+     "ARRAY[1..3] OF BOOL",
+     3,
+     Access::SafeZeroWrite},
+    {"MAIN.Follow_Control_Cmd.Cmd_IO_Joy_FromMaster",
+     "ARRAY[1..3] OF BOOL",
+     3,
+     Access::SafeZeroWrite},
     {"MAIN.ERCP_Online_flag", "BOOL", 1, Access::ReadOnly},
     {"POU_Ercp_CycleExecute.Ercp_Ready_State", "BOOL", 1, Access::ReadOnly},
     {"MAIN_ERCP.bERCP_Operate_State_FromMaster", "BOOL", 1, Access::SafeZeroWrite},
@@ -80,8 +85,14 @@ constexpr SymbolSpec kSymbols[] = {
     {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_State_02", "DINT", 4, Access::ReadOnly},
     {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Balloon_Pressure", "INT", 2, Access::ReadOnly},
     {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Operator_Pos", "LREAL", 8, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Control_Cmd.Cmd_6Dhandle_Joy_FromMaster", "ARRAY[1..6] OF LREAL", 48, Access::SafeZeroWrite},
-    {"MAIN_ERCP.ERCP_Control_Cmd.Cmd_Button_Joy_FromMaster", "ARRAY[1..3] OF BOOL", 3, Access::SafeZeroWrite},
+    {"MAIN_ERCP.ERCP_Control_Cmd.Cmd_6Dhandle_Joy_FromMaster",
+     "ARRAY[1..6] OF LREAL",
+     48,
+     Access::SafeZeroWrite},
+    {"MAIN_ERCP.ERCP_Control_Cmd.Cmd_Button_Joy_FromMaster",
+     "ARRAY[1..3] OF BOOL",
+     3,
+     Access::SafeZeroWrite},
     {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_01", "LREAL", 8, Access::SafeZeroWrite},
     {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_02", "LREAL", 8, Access::SafeZeroWrite},
     {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Pos_01", "LREAL", 8, Access::SafeZeroWrite},
@@ -100,47 +111,60 @@ struct Options {
 std::string AdsHex(long error)
 {
     std::ostringstream stream;
-    stream << "0x" << std::hex << std::uppercase
-           << static_cast<std::uint32_t>(error);
+    stream << "0x" << std::hex << std::uppercase << static_cast<std::uint32_t>(error);
     return stream.str();
 }
 
-const char* ErrorName(long error)
+const char *ErrorName(long error)
 {
     switch (error) {
-    case ADSERR_NOERR: return "OK";
-    case 0x06: return "TARGET_PORT_NOT_FOUND";
-    case 0x07: return "TARGET_MACHINE_NOT_FOUND";
-    case 0x15: return "AMS_SYNC_TIMEOUT";
-    case 0x1D: return "TLS_SEND_FAILED";
-    case ADSERR_DEVICE_INVALIDSIZE: return "ADS_INVALID_SIZE";
-    case ADSERR_DEVICE_SYMBOLNOTFOUND: return "ADS_SYMBOL_NOT_FOUND";
-    case ADSERR_DEVICE_ACCESSDENIED: return "ADS_ACCESS_DENIED";
-    case ADSERR_CLIENT_SYNCTIMEOUT: return "ADS_CLIENT_SYNC_TIMEOUT";
-    default: return "UNKNOWN";
+    case ADSERR_NOERR:
+        return "OK";
+    case 0x06:
+        return "TARGET_PORT_NOT_FOUND";
+    case 0x07:
+        return "TARGET_MACHINE_NOT_FOUND";
+    case 0x15:
+        return "AMS_SYNC_TIMEOUT";
+    case 0x1D:
+        return "TLS_SEND_FAILED";
+    case ADSERR_DEVICE_INVALIDSIZE:
+        return "ADS_INVALID_SIZE";
+    case ADSERR_DEVICE_SYMBOLNOTFOUND:
+        return "ADS_SYMBOL_NOT_FOUND";
+    case ADSERR_DEVICE_ACCESSDENIED:
+        return "ADS_ACCESS_DENIED";
+    case ADSERR_CLIENT_SYNCTIMEOUT:
+        return "ADS_CLIENT_SYNC_TIMEOUT";
+    default:
+        return "UNKNOWN";
     }
 }
 
-bool ParseNetId(const std::string& text, AmsNetId& net_id)
+bool ParseNetId(const std::string &text, AmsNetId &net_id)
 {
     std::array<unsigned int, 6> parts{};
     std::istringstream stream(text);
     for (std::size_t i = 0; i < parts.size(); ++i) {
-        if (!(stream >> parts[i])) return false;
+        if (!(stream >> parts[i]))
+            return false;
         if (i + 1 != parts.size()) {
             char separator = '\0';
-            if (!(stream >> separator) || separator != '.') return false;
+            if (!(stream >> separator) || separator != '.')
+                return false;
         }
     }
-    if (stream.peek() != std::char_traits<char>::eof()) return false;
+    if (stream.peek() != std::char_traits<char>::eof())
+        return false;
     for (std::size_t i = 0; i < parts.size(); ++i) {
-        if (parts[i] > 255) return false;
+        if (parts[i] > 255)
+            return false;
         net_id.b[i] = static_cast<unsigned char>(parts[i]);
     }
     return true;
 }
 
-bool ParseOptions(int argc, char** argv, Options& options)
+bool ParseOptions(int argc, char **argv, Options &options)
 {
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -148,7 +172,8 @@ bool ParseOptions(int argc, char** argv, Options& options)
             options.net_id = argv[++i];
         } else if (arg == "--port" && i + 1 < argc) {
             const int value = std::stoi(argv[++i]);
-            if (value < 1 || value > 65535) return false;
+            if (value < 1 || value > 65535)
+                return false;
             options.port = static_cast<std::uint16_t>(value);
         } else if (arg == "--write-safe-zero") {
             options.write_safe_zero = true;
@@ -166,19 +191,25 @@ struct OnlineSymbol {
     std::string type;
 };
 
-long QuerySymbol(AmsAddr& address, const char* name, OnlineSymbol& result)
+long QuerySymbol(AmsAddr &address, const char *name, OnlineSymbol &result)
 {
     std::array<std::uint8_t, 4096> buffer{};
     unsigned long bytes_read = 0;
     const auto name_size = static_cast<unsigned long>(std::strlen(name) + 1);
-    const long error = AdsSyncReadWriteReqEx(
-        &address, ADSIGRP_SYM_INFOBYNAMEEX, 0,
-        static_cast<unsigned long>(buffer.size()), buffer.data(),
-        name_size, const_cast<char*>(name), &bytes_read);
-    if (error != ADSERR_NOERR) return error;
-    if (bytes_read < sizeof(AdsSymbolEntry)) return ADSERR_DEVICE_INVALIDSIZE;
+    const long error = AdsSyncReadWriteReqEx(&address,
+                                             ADSIGRP_SYM_INFOBYNAMEEX,
+                                             0,
+                                             static_cast<unsigned long>(buffer.size()),
+                                             buffer.data(),
+                                             name_size,
+                                             const_cast<char *>(name),
+                                             &bytes_read);
+    if (error != ADSERR_NOERR)
+        return error;
+    if (bytes_read < sizeof(AdsSymbolEntry))
+        return ADSERR_DEVICE_INVALIDSIZE;
 
-    const auto* entry = reinterpret_cast<const AdsSymbolEntry*>(buffer.data());
+    const auto *entry = reinterpret_cast<const AdsSymbolEntry *>(buffer.data());
     result.index_group = entry->iGroup;
     result.index_offset = entry->iOffs;
     result.size = entry->size;
@@ -186,22 +217,24 @@ long QuerySymbol(AmsAddr& address, const char* name, OnlineSymbol& result)
     return ADSERR_NOERR;
 }
 
-std::string Preview(const std::vector<std::uint8_t>& bytes)
+std::string Preview(const std::vector<std::uint8_t> &bytes)
 {
     std::ostringstream stream;
     const std::size_t count = (std::min)(bytes.size(), std::size_t{16});
     for (std::size_t i = 0; i < count; ++i) {
-        if (i != 0) stream << ' ';
+        if (i != 0)
+            stream << ' ';
         stream << std::hex << std::uppercase << std::setw(2) << std::setfill('0')
                << static_cast<unsigned int>(bytes[i]);
     }
-    if (bytes.size() > count) stream << " ...";
+    if (bytes.size() > count)
+        stream << " ...";
     return stream.str();
 }
 
 } // namespace
 
-int main(int argc, char** argv)
+int main(int argc, char **argv)
 {
     Options options;
     try {
@@ -210,7 +243,7 @@ int main(int argc, char** argv)
                          " [--port 851] [--write-safe-zero]\n";
             return 2;
         }
-    } catch (const std::exception& error) {
+    } catch (const std::exception &error) {
         std::cerr << "Invalid arguments: " << error.what() << '\n';
         return 2;
     }
@@ -244,7 +277,7 @@ int main(int argc, char** argv)
     std::size_t written = 0;
     std::cout << "RESULT | SYMBOL | EXPECTED | ONLINE | READ | WRITE | VALUE[0..15]\n";
 
-    for (const auto& spec : kSymbols) {
+    for (const auto &spec : kSymbols) {
         OnlineSymbol online;
         const long query_error = QuerySymbol(address, spec.name, online);
         long read_error = ADSERR_NOERR;
@@ -254,48 +287,57 @@ int main(int argc, char** argv)
 
         if (ok) {
             bytes.resize(online.size);
-            read_error = AdsSyncReadReq(
-                &address, online.index_group, online.index_offset, online.size, bytes.data());
+            read_error = AdsSyncReadReq(&address,
+                                        online.index_group,
+                                        online.index_offset,
+                                        online.size,
+                                        bytes.data());
             ok = read_error == ADSERR_NOERR && online.size == spec.expected_size;
         }
 
-        const bool should_write =
-            options.write_safe_zero && spec.access == Access::SafeZeroWrite;
+        const bool should_write = options.write_safe_zero && spec.access == Access::SafeZeroWrite;
         if (should_write && query_error == ADSERR_NOERR) {
             if (online.size != spec.expected_size) {
                 write_error = ADSERR_DEVICE_INVALIDSIZE;
             } else {
                 std::vector<std::uint8_t> zeros(online.size, 0);
-                write_error = AdsSyncWriteReq(
-                    &address, online.index_group, online.index_offset, online.size, zeros.data());
-                if (write_error == ADSERR_NOERR) ++written;
+                write_error = AdsSyncWriteReq(&address,
+                                              online.index_group,
+                                              online.index_offset,
+                                              online.size,
+                                              zeros.data());
+                if (write_error == ADSERR_NOERR)
+                    ++written;
                 ok = ok && write_error == ADSERR_NOERR;
             }
         }
 
-        if (ok) ++passed;
-        else if (spec.required) ++failed;
+        if (ok)
+            ++passed;
+        else if (spec.required)
+            ++failed;
 
         std::cout << (ok ? "PASS" : (spec.required ? "FAIL" : "INFO")) << " | " << spec.name
-                  << " | " << spec.expected_type << '/' << spec.expected_size
-                  << " | ";
+                  << " | " << spec.expected_type << '/' << spec.expected_size << " | ";
         if (query_error == ADSERR_NOERR) {
             std::cout << online.type << '/' << online.size;
         } else {
             std::cout << AdsHex(query_error) << '(' << ErrorName(query_error) << ')';
         }
-        std::cout << " | " << (query_error == ADSERR_NOERR ? AdsHex(read_error) : "-")
-                  << " | ";
-        if (should_write && query_error != ADSERR_NOERR) std::cout << "NOT-FOUND";
-        else if (should_write) std::cout << AdsHex(write_error);
-        else if (spec.access == Access::DangerousAction) std::cout << "SKIP-DANGEROUS";
-        else std::cout << "SKIP";
+        std::cout << " | " << (query_error == ADSERR_NOERR ? AdsHex(read_error) : "-") << " | ";
+        if (should_write && query_error != ADSERR_NOERR)
+            std::cout << "NOT-FOUND";
+        else if (should_write)
+            std::cout << AdsHex(write_error);
+        else if (spec.access == Access::DangerousAction)
+            std::cout << "SKIP-DANGEROUS";
+        else
+            std::cout << "SKIP";
         std::cout << " | " << Preview(bytes) << '\n';
     }
 
     AdsPortClose();
-    std::cout << "\nSUMMARY total=" << std::size(kSymbols)
-              << " pass=" << passed << " fail=" << failed
-              << " safe_zero_writes=" << written << '\n';
+    std::cout << "\nSUMMARY total=" << std::size(kSymbols) << " pass=" << passed
+              << " fail=" << failed << " safe_zero_writes=" << written << '\n';
     return failed == 0 ? 0 : 1;
 }

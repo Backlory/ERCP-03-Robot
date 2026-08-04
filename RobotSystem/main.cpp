@@ -19,10 +19,10 @@ int main(int argv, char *argc[])
         if (error < 0) {
             MessageBoxW(NULL, L"加载配置文件失败.", L"错误", NULL);
             exit(-1);
-        } else if (error == 0
-            && MessageBoxW(
-                   NULL, L"找不到配置文件 config.yaml! 是否生成并使用默认参数?", L"错误", MB_YESNO)
-                == IDYES) {
+        } else if (error == 0 && MessageBoxW(NULL,
+                                             L"找不到配置文件 config.yaml! 是否生成并使用默认参数?",
+                                             L"错误",
+                                             MB_YESNO) == IDYES) {
             ercp::SaveSettings();
         }
     }
