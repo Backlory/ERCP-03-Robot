@@ -37,7 +37,7 @@ public:
         return bf;
     }
 
-    using FeedbackData = RobotFeedbackData;
+    using FeedbackData = RobotFeedbackLeaves;
 
 public:
     Beckhoff_Motor();
@@ -110,15 +110,6 @@ private:
     ReadDataBatch(const AdsReadRequest *requests, std::size_t count, std::uint32_t *itemErrors);
     std::uint32_t WriteData(const char *paraName, unsigned long length, const void *data);
     std::uint32_t SymbolHandle(const char *paraName, unsigned long &handle);
-    struct AdsSymbolInfo {
-        std::uint32_t index_group = 0;
-        std::uint32_t index_offset = 0;
-        std::uint32_t size = 0;
-    };
-    std::uint32_t QuerySymbolInfo(const char *paraName, AdsSymbolInfo &info);
-    std::uint32_t QuerySymbolSize(const char *paraName, std::uint32_t &size);
-    bool ValidateSymbolSize(const char *paraName, std::size_t expectedSize);
-    bool ValidateRobotFeedbackLayout();
     void ReleaseSymbolHandles();
     std::uint32_t AdsReadState(std::uint16_t &adsState, std::uint16_t &deviceState);
     std::uint32_t AdsWriteControl(std::uint16_t adsState,
@@ -151,7 +142,7 @@ private:
 
     mutable std::mutex m_ads_mutex;
     std::map<std::string, unsigned long> m_symbol_handles;
-    bool m_common_block_read_enabled = false;
+    std::map<std::string, std::uint32_t> m_symbol_errors;
     bool m_sum_read_supported = true;
 
 private:

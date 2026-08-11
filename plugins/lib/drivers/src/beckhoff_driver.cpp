@@ -5,6 +5,7 @@
 #include <iomanip>
 #include <limits>
 #include <sstream>
+#include <string>
 #include <thread>
 #include <iostream>
 #include "robot_config.h"
@@ -28,6 +29,52 @@ void KeepFirstError(std::uint32_t &current, std::uint32_t candidate)
     if (current == ADSERR_NOERR && candidate != ADSERR_NOERR)
         current = candidate;
 }
+
+template <std::size_t Count>
+std::array<std::string, Count> MakeIndexedSymbolNames(const char *prefix)
+{
+    std::array<std::string, Count> names{};
+    for (std::size_t i = 0; i < Count; ++i)
+        names[i] = std::string(prefix) + std::to_string(i + 1) + "]";
+    return names;
+}
+
+template <typename ErrorContainer>
+bool AnySuccessful(const ErrorContainer &errors)
+{
+    return std::any_of(errors.begin(), errors.end(), [](std::uint32_t error) {
+        return error == ADSERR_NOERR;
+    });
+}
+
+constexpr std::size_t kMainMotorErrorCount = 19;
+constexpr std::size_t kCommonBaseRequestCount = 3 + kMainMotorErrorCount;
+constexpr std::size_t kCommonRequestCount =
+    kCommonBaseRequestCount + kRobotFeedbackLeafCount;
+
+const auto kMainMotorErrorNames =
+    MakeIndexedSymbolNames<kMainMotorErrorCount>("MAIN.MotorErrorState[");
+const auto kAxesPositionNames = MakeIndexedSymbolNames<kRobotPublishedAxisCount>(
+    "MAIN.Info_Feedback_ToMaster.Axes_Pos[");
+const auto kForceSensorNames = MakeIndexedSymbolNames<kRobotForceSensorCount>(
+    "MAIN.Info_Feedback_ToMaster.Force_Sensor[");
+
+constexpr std::size_t kErcpDriveErrorCount = 13;
+constexpr std::size_t kErcpMotorErrorCount = 11;
+constexpr std::size_t kErcpDriveErrorsRequestStart = 3;
+constexpr std::size_t kErcpMotorErrorFlagRequestIndex =
+    kErcpDriveErrorsRequestStart + kErcpDriveErrorCount;
+constexpr std::size_t kErcpMotorErrorsRequestStart = kErcpMotorErrorFlagRequestIndex + 1;
+constexpr std::size_t kErcpTypeRequestIndex =
+    kErcpMotorErrorsRequestStart + kErcpMotorErrorCount;
+constexpr std::size_t kErcpMoveStatusRequestIndex = kErcpTypeRequestIndex + 1;
+constexpr std::size_t kErcpLoadDirectionRequestIndex = kErcpMoveStatusRequestIndex + 1;
+constexpr std::size_t kErcpStateRequestCount = kErcpLoadDirectionRequestIndex + 1;
+
+const auto kErcpDriveErrorNames =
+    MakeIndexedSymbolNames<kErcpDriveErrorCount>("MAIN_ERCP.DriveErrorState_ERCP[");
+const auto kErcpMotorErrorNames =
+    MakeIndexedSymbolNames<kErcpMotorErrorCount>("MAIN_ERCP.MotorErrorState_ERCP[");
 
 } // namespace
 
@@ -124,12 +171,11 @@ bool Beckhoff_Motor::OpenConn(string sIPAddr,
     }
     m_bIsOpen.store(true, std::memory_order_release);
     m_sum_read_supported = true;
-    m_common_block_read_enabled = ValidateRobotFeedbackLayout();
-    // MAIN_ERCP is optional. Probe a gold-standard leaf symbol instead of
-    // assuming an ABI for the enclosing TwinCAT STRUCT.
+    // MAIN_ERCP is optional. Probe one known leaf symbol; all robot-body
+    // feedback below is read through the static leaf table directly.
     double ercpProbe = 0;
     m_ercp_available.store(ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force",
-                                    sizeof(ercpProbe),
+                                    kAdsLrealBytes,
                                     &ercpProbe) == ADSERR_NOERR,
                            std::memory_order_release);
     m_StateUpdate_Thread =
@@ -538,133 +584,6 @@ std::uint32_t Beckhoff_Motor::AdsReadWrite(std::uint32_t indexGroup,
     return result;
 }
 
-std::uint32_t Beckhoff_Motor::QuerySymbolInfo(const char *paraName, AdsSymbolInfo &info)
-{
-    info = {};
-    if (!IsOpen())
-        return ADSERR_CLIENT_PORTNOTOPEN;
-
-    std::array<std::uint8_t, 4096> buffer{};
-    std::uint32_t bytesRead = 0;
-    const auto nameLength = static_cast<unsigned long>(std::strlen(paraName) + 1);
-    std::lock_guard<std::mutex> lock(m_ads_mutex);
-    if (!m_port_open)
-        return ADSERR_CLIENT_PORTNOTOPEN;
-
-    const auto result = AdsReadWrite(ADSIGRP_SYM_INFOBYNAMEEX,
-                                     0,
-                                     static_cast<unsigned long>(buffer.size()),
-                                     buffer.data(),
-                                     nameLength,
-                                     paraName,
-                                     &bytesRead);
-    if (result != ADSERR_NOERR)
-        return result;
-    if (bytesRead < sizeof(AdsSymbolEntry))
-        return ADSERR_DEVICE_INVALIDSIZE;
-
-    AdsSymbolEntry entry{};
-    std::memcpy(&entry, buffer.data(), sizeof(entry));
-    info.index_group = static_cast<std::uint32_t>(entry.iGroup);
-    info.index_offset = static_cast<std::uint32_t>(entry.iOffs);
-    info.size = static_cast<std::uint32_t>(entry.size);
-    return ADSERR_NOERR;
-}
-
-std::uint32_t Beckhoff_Motor::QuerySymbolSize(const char *paraName, std::uint32_t &size)
-{
-    AdsSymbolInfo info;
-    const auto result = QuerySymbolInfo(paraName, info);
-    size = info.size;
-    return result;
-}
-
-bool Beckhoff_Motor::ValidateSymbolSize(const char *paraName, std::size_t expectedSize)
-{
-    std::uint32_t onlineSize = 0;
-    const auto result = QuerySymbolSize(paraName, onlineSize);
-    if (result != ADSERR_NOERR) {
-        ROBOT_ERROR(true,
-                    "Cannot validate Beckhoff symbol "
-                        << paraName << " size; ADS error=0x" << std::uppercase << std::hex << result
-                        << std::nouppercase << std::dec << ". Falling back to leaf reads.")
-        return false;
-    }
-    if (onlineSize != expectedSize) {
-        ROBOT_ERROR(true,
-                    "Beckhoff symbol " << paraName << " size mismatch: online=" << onlineSize
-                                       << " bytes, expected=" << expectedSize
-                                       << " bytes. Falling back to leaf reads.")
-        return false;
-    }
-
-    ROBOT_INFO(true, "Beckhoff symbol " << paraName << " validated at " << onlineSize << " bytes.")
-    return true;
-}
-
-bool Beckhoff_Motor::ValidateRobotFeedbackLayout()
-{
-    constexpr const char *parentName = "MAIN.Info_Feedback_ToMaster";
-    if (!ValidateSymbolSize(parentName, RobotFeedbackBlockSize))
-        return false;
-
-    AdsSymbolInfo parent;
-    const auto parentResult = QuerySymbolInfo(parentName, parent);
-    if (parentResult != ADSERR_NOERR)
-        return false;
-
-    struct ExpectedField {
-        const char *suffix;
-        std::uint32_t offset;
-        std::uint32_t size;
-    };
-    constexpr std::array<ExpectedField, 13> fields{{
-        {"Follow_Length", 0, 8},
-        {"Switch_Water", 8, 1},
-        {"Switch_Gas", 9, 1},
-        {"Switch_Suck", 10, 1},
-        {"Axes_Pos", 16, 21 * 8},
-        {"Big_Wheel", 184, 8},
-        {"Small_Wheel", 192, 8},
-        {"Force_Sensor", 200, 10 * 8},
-        {"Power_level", 280, 2},
-        {"lifter", 288, 8},
-        {"Deliver_Force", 296, 8},
-        {"Rotate_Degree", 304, 8},
-        {"Follow_Force", 312, 8},
-    }};
-
-    for (const auto &field : fields) {
-        const auto fieldName = std::string(parentName) + "." + field.suffix;
-        AdsSymbolInfo online;
-        const auto result = QuerySymbolInfo(fieldName.c_str(), online);
-        if (result != ADSERR_NOERR) {
-            ROBOT_ERROR(true,
-                        "Cannot validate Beckhoff feedback field "
-                            << fieldName << "; ADS error=0x" << std::uppercase << std::hex << result
-                            << std::nouppercase << std::dec << ". Falling back to leaf reads.")
-            return false;
-        }
-        const bool offsetIsValid = online.index_group == parent.index_group &&
-                                   online.index_offset >= parent.index_offset &&
-                                   online.index_offset - parent.index_offset == field.offset;
-        if (!offsetIsValid || online.size != field.size) {
-            ROBOT_ERROR(true,
-                        "Beckhoff feedback ABI mismatch at "
-                            << fieldName << ": online offset="
-                            << (online.index_offset >= parent.index_offset
-                                    ? online.index_offset - parent.index_offset
-                                    : online.index_offset)
-                            << ", size=" << online.size << "; expected offset=" << field.offset
-                            << ", size=" << field.size << ". Falling back to leaf reads.")
-            return false;
-        }
-    }
-
-    ROBOT_INFO(true, "Beckhoff feedback ABI validated: 320 bytes and all 13 field offsets match.")
-    return true;
-}
-
 std::uint32_t Beckhoff_Motor::SymbolHandle(const char *paraName, unsigned long &handle)
 {
     const auto existing = m_symbol_handles.find(paraName);
@@ -672,6 +591,9 @@ std::uint32_t Beckhoff_Motor::SymbolHandle(const char *paraName, unsigned long &
         handle = existing->second;
         return ADSERR_NOERR;
     }
+    const auto failed = m_symbol_errors.find(paraName);
+    if (failed != m_symbol_errors.end())
+        return failed->second;
 
     if (!m_port_open)
         return ADSERR_CLIENT_PORTNOTOPEN;
@@ -679,8 +601,15 @@ std::uint32_t Beckhoff_Motor::SymbolHandle(const char *paraName, unsigned long &
     const auto nameLength = static_cast<unsigned long>(std::strlen(paraName) + 1);
     const auto result =
         AdsReadWrite(ADSIGRP_SYM_HNDBYNAME, 0, sizeof(handle), &handle, nameLength, paraName);
-    if (result == ADSERR_NOERR)
+    if (result == ADSERR_NOERR) {
         m_symbol_handles.emplace(paraName, handle);
+        m_symbol_errors.erase(paraName);
+    } else if (result == ADSERR_DEVICE_SYMBOLNOTFOUND) {
+        // Missing leaf symbols are expected on older PLC versions. Cache only
+        // the stable not-found result for this connection so a shorter array
+        // does not trigger another handle request every 20 ms.
+        m_symbol_errors.emplace(paraName, static_cast<std::uint32_t>(result));
+    }
     return result;
 }
 
@@ -690,6 +619,8 @@ std::uint32_t Beckhoff_Motor::ReadDataBatch(const AdsReadRequest *requests,
 {
     if (requests == nullptr || itemErrors == nullptr || count == 0)
         return ADSERR_DEVICE_INVALIDPARM;
+
+    std::fill_n(itemErrors, count, static_cast<std::uint32_t>(ADSERR_NOERR));
 
     const auto readSequentially = [&]() {
         std::uint32_t firstError = ADSERR_NOERR;
@@ -708,7 +639,8 @@ std::uint32_t Beckhoff_Motor::ReadDataBatch(const AdsReadRequest *requests,
     }
 
     std::vector<unsigned long> handles(count, 0);
-    std::vector<std::uint32_t> sumRequest(count * 3, 0);
+    std::vector<std::size_t> validIndices;
+    validIndices.reserve(count);
     std::size_t payloadSize = 0;
     bool fallBackToSequential = false;
     std::uint32_t firstError = ADSERR_NOERR;
@@ -722,19 +654,27 @@ std::uint32_t Beckhoff_Motor::ReadDataBatch(const AdsReadRequest *requests,
         for (std::size_t i = 0; i < count; ++i) {
             itemErrors[i] = SymbolHandle(requests[i].name, handles[i]);
             KeepFirstError(firstError, itemErrors[i]);
-            sumRequest[i * 3] = ADSIGRP_SYM_VALBYHND;
-            sumRequest[i * 3 + 1] = static_cast<std::uint32_t>(handles[i]);
-            sumRequest[i * 3 + 2] = static_cast<std::uint32_t>(requests[i].length);
-            payloadSize += requests[i].length;
+            if (itemErrors[i] == ADSERR_NOERR) {
+                validIndices.push_back(i);
+                payloadSize += requests[i].length;
+            }
         }
-        if (firstError != ADSERR_NOERR)
+        if (validIndices.empty())
             return firstError;
 
-        const auto resultBytes = count * sizeof(std::uint32_t) + payloadSize;
+        std::vector<std::uint32_t> sumRequest(validIndices.size() * 3, 0);
+        for (std::size_t i = 0; i < validIndices.size(); ++i) {
+            const auto requestIndex = validIndices[i];
+            sumRequest[i * 3] = ADSIGRP_SYM_VALBYHND;
+            sumRequest[i * 3 + 1] = static_cast<std::uint32_t>(handles[requestIndex]);
+            sumRequest[i * 3 + 2] = static_cast<std::uint32_t>(requests[requestIndex].length);
+        }
+
+        const auto resultBytes = validIndices.size() * sizeof(std::uint32_t) + payloadSize;
         std::vector<std::uint8_t> sumResult(resultBytes, 0);
         const auto result =
             AdsReadWrite(ADSIGRP_SUMUP_READ,
-                         static_cast<unsigned long>(count),
+                         static_cast<unsigned long>(validIndices.size()),
                          static_cast<unsigned long>(sumResult.size()),
                          sumResult.data(),
                          static_cast<unsigned long>(sumRequest.size() * sizeof(std::uint32_t)),
@@ -743,25 +683,29 @@ std::uint32_t Beckhoff_Motor::ReadDataBatch(const AdsReadRequest *requests,
             m_sum_read_supported = false;
             fallBackToSequential = true;
         } else if (result != ADSERR_NOERR) {
-            std::fill_n(itemErrors, count, result);
+            for (const auto requestIndex : validIndices)
+                itemErrors[requestIndex] = result;
             return result;
         } else {
-            std::size_t dataOffset = count * sizeof(std::uint32_t);
-            firstError = ADSERR_NOERR;
-            for (std::size_t i = 0; i < count; ++i) {
-                std::memcpy(&itemErrors[i],
+            std::size_t dataOffset = validIndices.size() * sizeof(std::uint32_t);
+            for (std::size_t i = 0; i < validIndices.size(); ++i) {
+                const auto requestIndex = validIndices[i];
+                std::memcpy(&itemErrors[requestIndex],
                             sumResult.data() + i * sizeof(std::uint32_t),
-                            sizeof(itemErrors[i]));
-                if (itemErrors[i] == ADSERR_NOERR) {
-                    std::memcpy(requests[i].data,
+                            sizeof(itemErrors[requestIndex]));
+                if (itemErrors[requestIndex] == ADSERR_NOERR) {
+                    std::memcpy(requests[requestIndex].data,
                                 sumResult.data() + dataOffset,
-                                requests[i].length);
+                                requests[requestIndex].length);
                 } else {
-                    AdsWrite(ADSIGRP_SYM_RELEASEHND, 0, sizeof(handles[i]), &handles[i]);
-                    m_symbol_handles.erase(requests[i].name);
+                    AdsWrite(ADSIGRP_SYM_RELEASEHND,
+                             0,
+                             sizeof(handles[requestIndex]),
+                             &handles[requestIndex]);
+                    m_symbol_handles.erase(requests[requestIndex].name);
                 }
-                KeepFirstError(firstError, itemErrors[i]);
-                dataOffset += requests[i].length;
+                KeepFirstError(firstError, itemErrors[requestIndex]);
+                dataOffset += requests[requestIndex].length;
             }
             return firstError;
         }
@@ -825,6 +769,7 @@ void Beckhoff_Motor::ReleaseSymbolHandles()
         }
     }
     m_symbol_handles.clear();
+    m_symbol_errors.clear();
 }
 
 // 建立地址
@@ -865,105 +810,108 @@ void Beckhoff_Motor::StateUpdateThread()
         next.poll_started_unix_ns = UnixNowNs();
         next.overall_ads_error = ADSERR_NOERR;
 
-        beckhoff_arm_move_state moveState{};
-        INT16 prepareState{};
+        std::uint32_t moveState{};
+        std::int16_t prepareState{};
         std::int32_t scopeType{};
         FeedbackData feedback{};
-        std::array<std::uint8_t, RobotFeedbackBlockSize> feedbackBlock{};
-        bool mainMotorErrors[19]{};
+        RobotFeedbackLeafErrors feedbackErrors{};
+        std::array<bool, kMainMotorErrorCount> mainMotorErrors{};
         std::uint32_t commonError = ADSERR_NOERR;
         std::ostringstream commonFailures;
-        bool hasCommonFailure = false;
-        std::array<AdsReadRequest, 17> commonRequests{};
-        std::array<std::uint32_t, 17> commonItemErrors{};
+        std::array<AdsReadRequest, kCommonRequestCount> commonRequests{};
+        std::array<std::uint32_t, kCommonRequestCount> commonItemErrors{};
         std::size_t commonRequestCount = 0;
         const auto addCommon = [&](const char *name, unsigned long length, void *data) {
             commonRequests[commonRequestCount++] = {name, length, data};
         };
-        addCommon("MAIN.Status_Feedback_ToMaster", sizeof(moveState), &moveState);
-        addCommon("MAIN.iPrepare_State", sizeof(prepareState), &prepareState);
-        addCommon("MAIN.type_of_scope", sizeof(scopeType), &scopeType);
-        // These three symbols are absent from the deployed robot-body PLC.
-        // Keep their wire fields at zero instead of making the whole Common
-        // snapshot stale and suppressing Robot status publication.
-        addCommon("MAIN.MotorErrorState", sizeof(mainMotorErrors), mainMotorErrors);
-        if (m_common_block_read_enabled) {
-            addCommon("MAIN.Info_Feedback_ToMaster",
-                      static_cast<unsigned long>(feedbackBlock.size()),
-                      feedbackBlock.data());
-        } else {
-#define ADD_MAIN_FEEDBACK(field, value)                                                            \
-    addCommon("MAIN.Info_Feedback_ToMaster." field, sizeof(value), &(value))
-            ADD_MAIN_FEEDBACK("Follow_Length", feedback.Follow_Length);
-            ADD_MAIN_FEEDBACK("Switch_Water", feedback.Switch_Water);
-            ADD_MAIN_FEEDBACK("Switch_Gas", feedback.Switch_Gas);
-            ADD_MAIN_FEEDBACK("Switch_Suck", feedback.Switch_Suck);
-            ADD_MAIN_FEEDBACK("Big_Wheel", feedback.Big_Whell);
-            ADD_MAIN_FEEDBACK("Small_Wheel", feedback.Small_Whell);
-            addCommon("MAIN.Info_Feedback_ToMaster.Force_Sensor",
-                      sizeof(feedback.Force_Sensor),
-                      feedback.Force_Sensor);
-            ADD_MAIN_FEEDBACK("Power_level", feedback.Power_level);
-            ADD_MAIN_FEEDBACK("lifter", feedback.lifter);
-            ADD_MAIN_FEEDBACK("Deliver_Force", feedback.Deliver_force);
-            ADD_MAIN_FEEDBACK("Rotate_Degree", feedback.Rotate_Deqree);
-            ADD_MAIN_FEEDBACK("Follow_Force", feedback.Follow_Force);
-            addCommon("MAIN.Info_Feedback_ToMaster.Axes_Pos",
-                      sizeof(feedback.Axes_Pos),
-                      feedback.Axes_Pos);
-#undef ADD_MAIN_FEEDBACK
+        addCommon("MAIN.Status_Feedback_ToMaster", kAdsInt32Bytes, &moveState);
+        addCommon("MAIN.iPrepare_State", kAdsInt16Bytes, &prepareState);
+        addCommon("MAIN.type_of_scope", kAdsInt32Bytes, &scopeType);
+        for (std::size_t i = 0; i < kMainMotorErrorCount; ++i) {
+            addCommon(kMainMotorErrorNames[i].c_str(), kAdsBoolBytes, &mainMotorErrors[i]);
         }
+
+        const auto feedbackRequestStart = commonRequestCount;
+        addCommon("MAIN.Info_Feedback_ToMaster.Follow_Length",
+                  kAdsLrealBytes,
+                  &feedback.follow_length);
+        addCommon("MAIN.Info_Feedback_ToMaster.Switch_Water",
+                  kAdsBoolBytes,
+                  &feedback.switch_water);
+        addCommon("MAIN.Info_Feedback_ToMaster.Switch_Gas",
+                  kAdsBoolBytes,
+                  &feedback.switch_gas);
+        addCommon("MAIN.Info_Feedback_ToMaster.Switch_Suck",
+                  kAdsBoolBytes,
+                  &feedback.switch_suck);
+        addCommon("MAIN.Info_Feedback_ToMaster.Big_Wheel", kAdsLrealBytes, &feedback.big_wheel);
+        addCommon("MAIN.Info_Feedback_ToMaster.Small_Wheel",
+                  kAdsLrealBytes,
+                  &feedback.small_wheel);
+        for (std::size_t i = 0; i < kRobotForceSensorCount; ++i) {
+            addCommon(kForceSensorNames[i].c_str(), kAdsLrealBytes, &feedback.force_sensor[i]);
+        }
+        addCommon("MAIN.Info_Feedback_ToMaster.Power_level",
+                  kAdsInt16Bytes,
+                  &feedback.power_level);
+        addCommon("MAIN.Info_Feedback_ToMaster.lifter", kAdsLrealBytes, &feedback.lifter);
+        addCommon("MAIN.Info_Feedback_ToMaster.Deliver_Force",
+                  kAdsLrealBytes,
+                  &feedback.deliver_force);
+        addCommon("MAIN.Info_Feedback_ToMaster.Rotate_Degree",
+                  kAdsLrealBytes,
+                  &feedback.rotate_degree);
+        addCommon("MAIN.Info_Feedback_ToMaster.Follow_Force",
+                  kAdsLrealBytes,
+                  &feedback.follow_force);
+        for (std::size_t i = 0; i < kRobotPublishedAxisCount; ++i) {
+            addCommon(kAxesPositionNames[i].c_str(), kAdsLrealBytes, &feedback.axes_pos[i]);
+        }
+
         commonError =
             ReadDataBatch(commonRequests.data(), commonRequestCount, commonItemErrors.data());
-        if (m_common_block_read_enabled &&
-            commonItemErrors[commonRequestCount - 1] != ADSERR_NOERR) {
-            m_common_block_read_enabled = false;
-            ROBOT_ERROR(true,
-                        "Beckhoff Common block read failed after startup validation; "
-                        "disabling block reads until reconnect and falling back to leaf reads.")
-        }
+        for (std::size_t i = 0; i < kRobotFeedbackLeafCount; ++i)
+            feedbackErrors[i] = commonItemErrors[feedbackRequestStart + i];
+
+        std::size_t successfulCommonItems = 0;
         for (std::size_t i = 0; i < commonRequestCount; ++i) {
             const auto error = commonItemErrors[i];
-            if (error == ADSERR_NOERR)
+            if (error == ADSERR_NOERR) {
+                ++successfulCommonItems;
                 continue;
-            if (hasCommonFailure)
+            }
+            if (!commonFailures.str().empty())
                 commonFailures << ", ";
             commonFailures << commonRequests[i].name << "=0x" << std::uppercase << std::hex << error
                            << std::nouppercase << std::dec;
             if (error == ADSERR_DEVICE_SYMBOLNOTFOUND) {
                 commonFailures << "(ADS_SYMBOL_NOT_FOUND)";
             }
-            hasCommonFailure = true;
-        }
-        if (commonError == ADSERR_NOERR && m_common_block_read_enabled &&
-            !DecodeRobotFeedbackBlock(feedbackBlock.data(), feedbackBlock.size(), feedback)) {
-            commonError = ADSERR_DEVICE_INVALIDSIZE;
-            commonFailures << "MAIN.Info_Feedback_ToMaster=0x" << std::uppercase << std::hex
-                           << commonError << std::nouppercase << std::dec << "(INVALID_BLOCK_SIZE)";
-            hasCommonFailure = true;
         }
         const auto commonFailureDetails = commonFailures.str();
-        if (commonError != ADSERR_NOERR && commonFailureDetails != lastCommonFailureDetails) {
+        if (!commonFailureDetails.empty() && commonFailureDetails != lastCommonFailureDetails) {
             ROBOT_ERROR(true,
-                        "Beckhoff Common status publication blocked; failed required fields: "
+                        "Beckhoff Common leaf fields unavailable; publishing successful fields: "
                             << commonFailureDetails)
         } else if (commonError == ADSERR_NOERR && !lastCommonFailureDetails.empty()) {
-            ROBOT_INFO(true, "Beckhoff Common status recovered; all required fields are readable.")
+            ROBOT_INFO(true, "Beckhoff Common leaf reads recovered; all fields are readable.")
         }
         lastCommonFailureDetails = commonFailureDetails;
         next.common_ads_error = commonError;
         KeepFirstError(next.overall_ads_error, commonError);
-        if (commonError == ADSERR_NOERR) {
-            next.move_state = static_cast<std::uint32_t>(moveState);
-            ApplyRobotFeedback(feedback, next);
-            next.prepare_state = prepareState == 1 ? 1 : 0;
-            next.scope_type = scopeType;
-            next.error_flags = 0;
-            next.drive_errors = 0;
-            next.motor_errors = 0;
-            for (std::size_t i = 0; i < std::size(mainMotorErrors); ++i)
-                if (mainMotorErrors[i])
-                    next.motor_errors |= 1u << i;
+        next.move_state = commonItemErrors[0] == ADSERR_NOERR ? moveState : 0;
+        next.prepare_state = commonItemErrors[1] == ADSERR_NOERR && prepareState == 1 ? 1 : 0;
+        next.scope_type = commonItemErrors[2] == ADSERR_NOERR ? scopeType : 0;
+        next.error_flags = 0;
+        next.drive_errors = 0;
+        next.motor_errors = 0;
+        for (std::size_t i = 0; i < kMainMotorErrorCount; ++i) {
+            if (commonItemErrors[3 + i] == ADSERR_NOERR && mainMotorErrors[i])
+                next.motor_errors |= 1u << i;
+        }
+        ApplyRobotFeedback(feedback, feedbackErrors, next);
+
+        if (successfulCommonItems != 0) {
             next.valid_groups |= SnapshotCommon;
             next.stale_groups &= static_cast<std::uint8_t>(~SnapshotCommon);
             next.sampled_at_unix_ns[0] = UnixNowNs();
@@ -976,7 +924,7 @@ void Beckhoff_Motor::StateUpdateThread()
             double ercpProbe = 0;
             const bool detected =
                 ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force",
-                         sizeof(ercpProbe),
+                         kAdsLrealBytes,
                          &ercpProbe) == ADSERR_NOERR;
             m_ercp_available.store(detected, std::memory_order_release);
             if (detected)
@@ -988,48 +936,66 @@ void Beckhoff_Motor::StateUpdateThread()
             bool ercpOnline = false;
             bool ercpReady = false;
             bool driveError = false;
-            bool driveErrors[13]{};
+            std::array<bool, kErcpDriveErrorCount> driveErrors{};
             bool motorError = false;
-            bool motorErrors[11]{};
-            int ercpType = 0;
-            int ercpMoveStatus = 0;
+            std::array<bool, kErcpMotorErrorCount> motorErrors{};
+            std::int32_t ercpType = 0;
+            std::int32_t ercpMoveStatus = 0;
             bool loadDirection = false;
-            const std::array<AdsReadRequest, 9> ercpStateRequests{{
-                {"MAIN.ERCP_Online_flag", sizeof(ercpOnline), &ercpOnline},
-                {"POU_Ercp_CycleExecute.Ercp_Ready_State", sizeof(ercpReady), &ercpReady},
-                {"MAIN_ERCP.bErro_State_Drive_ERCP", sizeof(driveError), &driveError},
-                {"MAIN_ERCP.DriveErrorState_ERCP", sizeof(driveErrors), driveErrors},
-                {"MAIN_ERCP.bErro_State_Motor_ERCP", sizeof(motorError), &motorError},
-                {"MAIN_ERCP.MotorErrorState_ERCP", sizeof(motorErrors), motorErrors},
-                {"MAIN_ERCP.type_of_ERCP", sizeof(ercpType), &ercpType},
-                {"MAIN_ERCP.ERCP_Status_Feedback_ToMaster",
-                 sizeof(ercpMoveStatus),
-                 &ercpMoveStatus},
-                {"MAIN_ERCP.bERCP_Load_Exchange_Dir", sizeof(loadDirection), &loadDirection},
-            }};
+            std::array<AdsReadRequest, kErcpStateRequestCount> ercpStateRequests{};
+            std::size_t ercpStateRequestCount = 0;
+            const auto addErcpState = [&](const char *name, unsigned long length, void *data) {
+                ercpStateRequests[ercpStateRequestCount++] = {name, length, data};
+            };
+            addErcpState("MAIN.ERCP_Online_flag", kAdsBoolBytes, &ercpOnline);
+            addErcpState("POU_Ercp_CycleExecute.Ercp_Ready_State", kAdsBoolBytes, &ercpReady);
+            addErcpState("MAIN_ERCP.bErro_State_Drive_ERCP", kAdsBoolBytes, &driveError);
+            for (std::size_t i = 0; i < kErcpDriveErrorCount; ++i) {
+                addErcpState(kErcpDriveErrorNames[i].c_str(), kAdsBoolBytes, &driveErrors[i]);
+            }
+            addErcpState("MAIN_ERCP.bErro_State_Motor_ERCP", kAdsBoolBytes, &motorError);
+            for (std::size_t i = 0; i < kErcpMotorErrorCount; ++i) {
+                addErcpState(kErcpMotorErrorNames[i].c_str(), kAdsBoolBytes, &motorErrors[i]);
+            }
+            addErcpState("MAIN_ERCP.type_of_ERCP", kAdsInt32Bytes, &ercpType);
+            addErcpState("MAIN_ERCP.ERCP_Status_Feedback_ToMaster",
+                         kAdsInt32Bytes,
+                         &ercpMoveStatus);
+            addErcpState("MAIN_ERCP.bERCP_Load_Exchange_Dir", kAdsBoolBytes, &loadDirection);
             std::array<std::uint32_t, ercpStateRequests.size()> ercpStateItemErrors{};
             const auto ercpStateError = ReadDataBatch(ercpStateRequests.data(),
-                                                      ercpStateRequests.size(),
+                                                      ercpStateRequestCount,
                                                       ercpStateItemErrors.data());
             next.ercp_state_ads_error = ercpStateError;
             KeepFirstError(next.overall_ads_error, ercpStateError);
-            if (ercpStateError == ADSERR_NOERR) {
-                next.ercp_flags = static_cast<std::uint16_t>(
-                    (ercpOnline ? 1u << 0 : 0u) | (ercpReady ? 1u << 1 : 0u) |
-                    (loadDirection ? 1u << 2 : 0u) | (driveError ? 1u << 3 : 0u) |
-                    (motorError ? 1u << 4 : 0u));
-                next.ercp_drive_errors = 0;
-                for (std::size_t i = 0; i < std::size(driveErrors); ++i) {
-                    if (driveErrors[i])
-                        next.ercp_drive_errors |= static_cast<std::uint16_t>(1u << i);
-                }
-                next.ercp_motor_errors = 0;
-                for (std::size_t i = 0; i < std::size(motorErrors); ++i) {
-                    if (motorErrors[i])
-                        next.ercp_motor_errors |= static_cast<std::uint16_t>(1u << i);
-                }
-                next.ercp_type = ercpType;
-                next.ercp_move_status = ercpMoveStatus;
+            next.ercp_flags = static_cast<std::uint16_t>(
+                (ercpStateItemErrors[0] == ADSERR_NOERR && ercpOnline ? 1u << 0 : 0u) |
+                (ercpStateItemErrors[1] == ADSERR_NOERR && ercpReady ? 1u << 1 : 0u) |
+                (ercpStateItemErrors[2] == ADSERR_NOERR && driveError ? 1u << 3 : 0u) |
+                (ercpStateItemErrors[kErcpLoadDirectionRequestIndex] == ADSERR_NOERR &&
+                         loadDirection
+                     ? 1u << 2
+                     : 0u) |
+                (ercpStateItemErrors[kErcpMotorErrorFlagRequestIndex] == ADSERR_NOERR && motorError
+                     ? 1u << 4
+                     : 0u));
+            next.ercp_drive_errors = 0;
+            for (std::size_t i = 0; i < kErcpDriveErrorCount; ++i) {
+                if (ercpStateItemErrors[kErcpDriveErrorsRequestStart + i] == ADSERR_NOERR &&
+                    driveErrors[i])
+                    next.ercp_drive_errors |= static_cast<std::uint16_t>(1u << i);
+            }
+            next.ercp_motor_errors = 0;
+            for (std::size_t i = 0; i < kErcpMotorErrorCount; ++i) {
+                if (ercpStateItemErrors[kErcpMotorErrorsRequestStart + i] == ADSERR_NOERR &&
+                    motorErrors[i])
+                    next.ercp_motor_errors |= static_cast<std::uint16_t>(1u << i);
+            }
+            next.ercp_type = ercpStateItemErrors[kErcpTypeRequestIndex] == ADSERR_NOERR ? ercpType : 0;
+            next.ercp_move_status = ercpStateItemErrors[kErcpMoveStatusRequestIndex] == ADSERR_NOERR
+                                        ? ercpMoveStatus
+                                        : 0;
+            if (AnySuccessful(ercpStateItemErrors)) {
                 next.valid_groups |= SnapshotErcpState;
                 next.stale_groups &= static_cast<std::uint8_t>(~SnapshotErcpState);
                 next.sampled_at_unix_ns[2] = UnixNowNs();
@@ -1050,35 +1016,35 @@ void Beckhoff_Motor::StateUpdateThread()
             double operatorPosition = 0;
             const std::array<AdsReadRequest, 11> ercpFeedbackRequests{{
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force",
-                 sizeof(ercpDeliverForce),
+                 kAdsLrealBytes,
                  &ercpDeliverForce},
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.GuideWire_Force",
-                 sizeof(guideWireForce),
+                 kAdsLrealBytes,
                  &guideWireForce},
-                {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Bow_Force", sizeof(bowForce), &bowForce},
+                {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Bow_Force", kAdsLrealBytes, &bowForce},
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Pos",
-                 sizeof(ercpDeliverPosition),
+                 kAdsLrealBytes,
                  &ercpDeliverPosition},
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.GuideWire_Pos",
-                 sizeof(guideWirePosition),
+                 kAdsLrealBytes,
                  &guideWirePosition},
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_CurPos_01",
-                 sizeof(injectPosition01),
+                 kAdsLrealBytes,
                  &injectPosition01},
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_CurPos_02",
-                 sizeof(injectPosition02),
+                 kAdsLrealBytes,
                  &injectPosition02},
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_State_01",
-                 sizeof(injectState01),
+                 kAdsInt32Bytes,
                  &injectState01},
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_State_02",
-                 sizeof(injectState02),
+                 kAdsInt32Bytes,
                  &injectState02},
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Balloon_Pressure",
-                 sizeof(balloonPressure),
+                 kAdsInt16Bytes,
                  &balloonPressure},
                 {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Operator_Pos",
-                 sizeof(operatorPosition),
+                 kAdsLrealBytes,
                  &operatorPosition},
             }};
             std::array<std::uint32_t, ercpFeedbackRequests.size()> ercpFeedbackItemErrors{};
@@ -1087,18 +1053,28 @@ void Beckhoff_Motor::StateUpdateThread()
                                                          ercpFeedbackItemErrors.data());
             next.ercp_feedback_ads_error = ercpFeedbackError;
             KeepFirstError(next.overall_ads_error, ercpFeedbackError);
-            if (ercpFeedbackError == ADSERR_NOERR) {
-                next.ercp_deliver_force = ercpDeliverForce;
-                next.guide_wire_force = guideWireForce;
-                next.bow_force = bowForce;
-                next.ercp_deliver_position = ercpDeliverPosition;
-                next.guide_wire_position = guideWirePosition;
-                next.inject_current_position_01 = injectPosition01;
-                next.inject_current_position_02 = injectPosition02;
-                next.inject_state_01 = injectState01;
-                next.inject_state_02 = injectState02;
-                next.balloon_pressure = balloonPressure;
-                next.operator_position = operatorPosition;
+            next.ercp_deliver_force = ercpFeedbackItemErrors[0] == ADSERR_NOERR
+                                          ? ercpDeliverForce
+                                          : 0;
+            next.guide_wire_force = ercpFeedbackItemErrors[1] == ADSERR_NOERR ? guideWireForce : 0;
+            next.bow_force = ercpFeedbackItemErrors[2] == ADSERR_NOERR ? bowForce : 0;
+            next.ercp_deliver_position = ercpFeedbackItemErrors[3] == ADSERR_NOERR
+                                             ? ercpDeliverPosition
+                                             : 0;
+            next.guide_wire_position = ercpFeedbackItemErrors[4] == ADSERR_NOERR
+                                           ? guideWirePosition
+                                           : 0;
+            next.inject_current_position_01 = ercpFeedbackItemErrors[5] == ADSERR_NOERR
+                                                  ? injectPosition01
+                                                  : 0;
+            next.inject_current_position_02 = ercpFeedbackItemErrors[6] == ADSERR_NOERR
+                                                  ? injectPosition02
+                                                  : 0;
+            next.inject_state_01 = ercpFeedbackItemErrors[7] == ADSERR_NOERR ? injectState01 : 0;
+            next.inject_state_02 = ercpFeedbackItemErrors[8] == ADSERR_NOERR ? injectState02 : 0;
+            next.balloon_pressure = ercpFeedbackItemErrors[9] == ADSERR_NOERR ? balloonPressure : 0;
+            next.operator_position = ercpFeedbackItemErrors[10] == ADSERR_NOERR ? operatorPosition : 0;
+            if (AnySuccessful(ercpFeedbackItemErrors)) {
                 next.valid_groups |= SnapshotErcpFeedback;
                 next.stale_groups &= static_cast<std::uint8_t>(~SnapshotErcpFeedback);
                 next.sampled_at_unix_ns[3] = UnixNowNs();

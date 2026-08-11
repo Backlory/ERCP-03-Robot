@@ -1,93 +1,114 @@
 #pragma once
 
-#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
-#include <cstring>
 
 #include "beckhoff_snapshot.hpp"
 
 namespace device::beckhoff {
 
-constexpr std::size_t RobotFeedbackBlockSize = 320;
+// These are RobotSystem's local publication capacities. They are not ADS
+// array lengths and must not be used as a request size for a PLC array.
+constexpr std::size_t kRobotPublishedAxisCount = 19;
+constexpr std::size_t kRobotForceSensorCount = 10;
 
-// Exact ADS block layout of MAIN.Info_Feedback_ToMaster on the deployed
-// TwinCAT runtime. The PLC declaration order, not the gold-table display
-// order, determines these offsets.
-struct RobotFeedbackData {
-    double Follow_Length;
-    bool Switch_Water;
-    bool Switch_Gas;
-    bool Switch_Suck;
-    double Axes_Pos[21];
-    double Big_Whell;
-    double Small_Whell;
-    double Force_Sensor[10];
-    std::int16_t Power_level;
-    double lifter;
-    double Deliver_force;
-    double Rotate_Deqree;
-    double Follow_Force;
+// TwinCAT scalar sizes used by the read table. Keep these independent from
+// the C++ representation of an array or a PLC STRUCT.
+constexpr unsigned long kAdsBoolBytes = 1;
+constexpr unsigned long kAdsInt16Bytes = 2;
+constexpr unsigned long kAdsInt32Bytes = 4;
+constexpr unsigned long kAdsLrealBytes = 8;
+
+// Values decoded from individual MAIN.Info_Feedback_ToMaster leaf symbols.
+// This is a local value model, not a mirror of the PLC STRUCT ABI.
+struct RobotFeedbackLeaves {
+    double follow_length = 0;
+    bool switch_water = false;
+    bool switch_gas = false;
+    bool switch_suck = false;
+    std::array<double, kRobotPublishedAxisCount> axes_pos{};
+    double big_wheel = 0;
+    double small_wheel = 0;
+    std::array<double, kRobotForceSensorCount> force_sensor{};
+    std::int16_t power_level = 0;
+    double lifter = 0;
+    double deliver_force = 0;
+    double rotate_degree = 0;
+    double follow_force = 0;
 };
 
-static_assert(sizeof(RobotFeedbackData) == RobotFeedbackBlockSize,
-              "RobotFeedbackData must match MAIN.Info_Feedback_ToMaster");
-static_assert(offsetof(RobotFeedbackData, Follow_Length) == 0, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Switch_Water) == 8, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Switch_Gas) == 9, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Switch_Suck) == 10, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Axes_Pos) == 16, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Big_Whell) == 184, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Small_Whell) == 192, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Force_Sensor) == 200, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Power_level) == 280, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, lifter) == 288, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Deliver_force) == 296, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Rotate_Deqree) == 304, "RobotFeedbackData ABI drift");
-static_assert(offsetof(RobotFeedbackData, Follow_Force) == 312, "RobotFeedbackData ABI drift");
+// One error slot per static leaf request. A zero slot means that the leaf is
+// available for this poll; a non-zero slot means that only that leaf is
+// unavailable. The array is intentionally local to the read/apply seam and
+// is not added to the UDP status model.
+constexpr std::size_t kFeedbackFollowLengthIndex = 0;
+constexpr std::size_t kFeedbackSwitchWaterIndex = 1;
+constexpr std::size_t kFeedbackSwitchGasIndex = 2;
+constexpr std::size_t kFeedbackSwitchSuckIndex = 3;
+constexpr std::size_t kFeedbackBigWheelIndex = 4;
+constexpr std::size_t kFeedbackSmallWheelIndex = 5;
+constexpr std::size_t kFeedbackForceSensorBaseIndex = 6;
+constexpr std::size_t kFeedbackPowerLevelIndex =
+    kFeedbackForceSensorBaseIndex + kRobotForceSensorCount;
+constexpr std::size_t kFeedbackLifterIndex = kFeedbackPowerLevelIndex + 1;
+constexpr std::size_t kFeedbackDeliverForceIndex = kFeedbackLifterIndex + 1;
+constexpr std::size_t kFeedbackRotateDegreeIndex = kFeedbackDeliverForceIndex + 1;
+constexpr std::size_t kFeedbackFollowForceIndex = kFeedbackRotateDegreeIndex + 1;
+constexpr std::size_t kFeedbackAxesBaseIndex = kFeedbackFollowForceIndex + 1;
+constexpr std::size_t kRobotFeedbackLeafCount =
+    kFeedbackAxesBaseIndex + kRobotPublishedAxisCount;
 
-inline bool
-DecodeRobotFeedbackBlock(const void *block, std::size_t blockSize, RobotFeedbackData &feedback)
+using RobotFeedbackLeafErrors = std::array<std::uint32_t, kRobotFeedbackLeafCount>;
+
+inline bool FeedbackLeafAvailable(const RobotFeedbackLeafErrors &errors, std::size_t index)
 {
-    if (block == nullptr || blockSize != RobotFeedbackBlockSize)
-        return false;
-
-    const auto *bytes = static_cast<const std::uint8_t *>(block);
-    std::memcpy(&feedback.Follow_Length, bytes + 0, sizeof(feedback.Follow_Length));
-    std::memcpy(&feedback.Switch_Water, bytes + 8, sizeof(feedback.Switch_Water));
-    std::memcpy(&feedback.Switch_Gas, bytes + 9, sizeof(feedback.Switch_Gas));
-    std::memcpy(&feedback.Switch_Suck, bytes + 10, sizeof(feedback.Switch_Suck));
-    std::memcpy(&feedback.Axes_Pos, bytes + 16, sizeof(feedback.Axes_Pos));
-    std::memcpy(&feedback.Big_Whell, bytes + 184, sizeof(feedback.Big_Whell));
-    std::memcpy(&feedback.Small_Whell, bytes + 192, sizeof(feedback.Small_Whell));
-    std::memcpy(&feedback.Force_Sensor, bytes + 200, sizeof(feedback.Force_Sensor));
-    std::memcpy(&feedback.Power_level, bytes + 280, sizeof(feedback.Power_level));
-    std::memcpy(&feedback.lifter, bytes + 288, sizeof(feedback.lifter));
-    std::memcpy(&feedback.Deliver_force, bytes + 296, sizeof(feedback.Deliver_force));
-    std::memcpy(&feedback.Rotate_Deqree, bytes + 304, sizeof(feedback.Rotate_Deqree));
-    std::memcpy(&feedback.Follow_Force, bytes + 312, sizeof(feedback.Follow_Force));
-    return true;
+    return errors[index] == 0;
 }
 
-inline void ApplyRobotFeedback(const RobotFeedbackData &feedback, BeckhoffSnapshot &snapshot)
+// Apply only values whose corresponding leaf read succeeded. Failed leaves
+// are cleared in the local snapshot and represented by common_ads_error plus
+// the rate-limited field log in the ADS adapter; no startup policy is applied
+// here.
+inline void ApplyRobotFeedback(const RobotFeedbackLeaves &feedback,
+                               const RobotFeedbackLeafErrors &errors,
+                               BeckhoffSnapshot &snapshot)
 {
-    snapshot.output_switches = static_cast<std::uint16_t>((feedback.Switch_Water ? 1u << 0 : 0u) |
-                                                          (feedback.Switch_Gas ? 1u << 1 : 0u) |
-                                                          (feedback.Switch_Suck ? 1u << 2 : 0u));
-    snapshot.power_level = feedback.Power_level;
-    snapshot.common_values[0] = feedback.Follow_Length;
-    snapshot.common_values[1] = feedback.Big_Whell;
-    snapshot.common_values[2] = feedback.Small_Whell;
-    std::copy(std::begin(feedback.Force_Sensor),
-              std::end(feedback.Force_Sensor),
-              snapshot.common_values.begin() + 3);
-    snapshot.common_values[13] = feedback.lifter;
-    snapshot.common_values[14] = feedback.Deliver_force;
-    snapshot.common_values[15] = feedback.Rotate_Deqree;
-    snapshot.common_values[16] = feedback.Follow_Force;
-    // V3 preserves its fixed 19-axis wire contract while TwinCAT exposes 21.
-    std::copy_n(std::begin(feedback.Axes_Pos), 19, snapshot.common_values.begin() + 17);
+    const auto available = [&](std::size_t index) {
+        return FeedbackLeafAvailable(errors, index);
+    };
+    const auto applyDouble = [&](double &target, double value, std::size_t index) {
+        target = available(index) ? value : 0;
+    };
+
+    snapshot.output_switches = 0;
+    if (available(kFeedbackSwitchWaterIndex) && feedback.switch_water)
+        snapshot.output_switches |= static_cast<std::uint16_t>(1u << 0);
+    if (available(kFeedbackSwitchGasIndex) && feedback.switch_gas)
+        snapshot.output_switches |= static_cast<std::uint16_t>(1u << 1);
+    if (available(kFeedbackSwitchSuckIndex) && feedback.switch_suck)
+        snapshot.output_switches |= static_cast<std::uint16_t>(1u << 2);
+
+    snapshot.power_level = available(kFeedbackPowerLevelIndex) ? feedback.power_level : 0;
+    applyDouble(snapshot.common_values[0], feedback.follow_length, kFeedbackFollowLengthIndex);
+    applyDouble(snapshot.common_values[1], feedback.big_wheel, kFeedbackBigWheelIndex);
+    applyDouble(snapshot.common_values[2], feedback.small_wheel, kFeedbackSmallWheelIndex);
+
+    for (std::size_t i = 0; i < kRobotForceSensorCount; ++i) {
+        applyDouble(snapshot.common_values[3 + i],
+                    feedback.force_sensor[i],
+                    kFeedbackForceSensorBaseIndex + i);
+    }
+    applyDouble(snapshot.common_values[13], feedback.lifter, kFeedbackLifterIndex);
+    applyDouble(snapshot.common_values[14], feedback.deliver_force, kFeedbackDeliverForceIndex);
+    applyDouble(snapshot.common_values[15], feedback.rotate_degree, kFeedbackRotateDegreeIndex);
+    applyDouble(snapshot.common_values[16], feedback.follow_force, kFeedbackFollowForceIndex);
+
+    for (std::size_t i = 0; i < kRobotPublishedAxisCount; ++i) {
+        applyDouble(snapshot.common_values[17 + i],
+                    feedback.axes_pos[i],
+                    kFeedbackAxesBaseIndex + i);
+    }
 }
 
 } // namespace device::beckhoff

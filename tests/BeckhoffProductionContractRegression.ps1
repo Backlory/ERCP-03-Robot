@@ -4,22 +4,22 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $driver = Join-Path $RobotRoot 'plugins\lib\drivers\src\beckhoff_driver.cpp'
-$source = Get-Content -LiteralPath $driver -Raw
+$source = Get-Content -LiteralPath $driver -Raw -Encoding UTF8
 $layoutHeader = Join-Path $RobotRoot 'include\include\beckhoff_feedback_layout.hpp'
-$layout = Get-Content -LiteralPath $layoutHeader -Raw
+$layout = Get-Content -LiteralPath $layoutHeader -Raw -Encoding UTF8
 $failures = [System.Collections.Generic.List[string]]::new()
 
 function Require-Text([string]$haystack, [string]$text, [string]$description) {
     if (-not $haystack.Contains($text)) {
-        $failures.Add("Missing gold-standard contract: $description ($text)")
+        $failures.Add("Missing leaf-read contract: $description ($text)")
     }
 }
 
 foreach ($field in @(
     'Follow_Length', 'Switch_Water', 'Switch_Gas', 'Switch_Suck',
-    'Big_Whell', 'Small_Whell', 'Force_Sensor', 'Power_level', 'lifter',
-    'Deliver_force', 'Rotate_Deqree', 'Follow_Force', 'Axes_Pos')) {
-    Require-Text $layout $field "robot feedback ABI field $field"
+    'Big_Wheel', 'Small_Wheel', 'Force_Sensor', 'Power_level', 'lifter',
+    'Deliver_Force', 'Rotate_Degree', 'Follow_Force', 'Axes_Pos')) {
+    Require-Text $source $field "robot feedback leaf $field"
 }
 
 foreach ($field in @(
@@ -40,39 +40,32 @@ foreach ($symbol in @(
     Require-Text $source $symbol "command leaf $symbol"
 }
 
-foreach ($declaration in @('bool driveErrors[13]{}', 'bool motorErrors[11]{}',
-        'bool mainMotorErrors[19]{}')) {
-    Require-Text $source $declaration "gold error-array length"
-}
+Require-Text $layout 'struct RobotFeedbackLeaves' 'local leaf value model'
+Require-Text $layout 'using RobotFeedbackLeafErrors' 'per-leaf unavailable errors'
+Require-Text $layout 'ApplyRobotFeedback(const RobotFeedbackLeaves' 'partial leaf application'
+Require-Text $layout 'kRobotPublishedAxisCount = 19' 'local 19-axis publication capacity'
+Require-Text $layout 'kAdsLrealBytes = 8' 'fixed ADS LREAL request size'
+Require-Text $source 'MakeIndexedSymbolNames' 'element-symbol name construction'
+Require-Text $source 'MAIN.MotorErrorState[' 'main motor error element symbols'
+Require-Text $source 'MAIN.Info_Feedback_ToMaster.Axes_Pos[' 'axis element symbols'
+Require-Text $source 'MAIN.Info_Feedback_ToMaster.Force_Sensor[' 'force sensor element symbols'
+Require-Text $source 'ADSIGRP_SUMUP_READ' 'ADS Sum Read transport'
+Require-Text $source 'std::array<AdsReadRequest, kErcpStateRequestCount>' `
+    'ERCP state element Sum Read group'
+Require-Text $source 'const std::array<AdsReadRequest, 11> ercpFeedbackRequests' `
+    'ERCP feedback Sum Read group'
+Require-Text $source 'std::vector<std::size_t> validIndices' `
+    'partial Sum Read when one symbol is absent'
 
 foreach ($forbidden in @(
-    'WriteData("MAIN.Follow_Control_Cmd",',
-    'ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster",')) {
-    if ($source.Contains($forbidden)) {
-        $failures.Add("Raw TwinCAT STRUCT access is forbidden without an explicit ABI: $forbidden")
+    'RobotFeedbackBlockSize', 'RobotFeedbackData', 'DecodeRobotFeedbackBlock',
+    'ValidateRobotFeedbackLayout', 'm_common_block_read_enabled',
+    'feedbackBlock', 'addCommon("MAIN.Info_Feedback_ToMaster",',
+    'sizeof(mainMotorErrors)', 'sizeof(feedback.', 'sizeof(driveErrors)',
+    'sizeof(motorErrors)')) {
+    if ($source.Contains($forbidden) -or $layout.Contains($forbidden)) {
+        $failures.Add("320-byte parent/remote-array dependency remains: $forbidden")
     }
-}
-
-Require-Text $layout 'constexpr std::size_t RobotFeedbackBlockSize = 320;' `
-    '320-byte robot feedback block size'
-Require-Text $layout 'static_assert(sizeof(RobotFeedbackData) == RobotFeedbackBlockSize' `
-    '320-byte robot feedback ABI size guard'
-Require-Text $source 'm_common_block_read_enabled = ValidateRobotFeedbackLayout();' `
-    'online feedback size-and-offset validation'
-Require-Text $source 'constexpr std::array<ExpectedField, 13> fields' `
-    'all online feedback field offsets are validated'
-Require-Text $source 'm_common_block_read_enabled = false;' `
-    'block-read failures safely fall back until reconnect'
-Require-Text $source 'addCommon("MAIN.Info_Feedback_ToMaster",' `
-    'single 320-byte Common feedback read'
-Require-Text $source 'ADSIGRP_SUMUP_READ' 'ADS Sum Read transport'
-Require-Text $source 'const std::array<AdsReadRequest, 9> ercpStateRequests' `
-    'single ERCP-state Sum Read group'
-Require-Text $source 'const std::array<AdsReadRequest, 11> ercpFeedbackRequests' `
-    'single ERCP-feedback Sum Read group'
-
-if ($source.Contains('READ_MAIN_FEEDBACK')) {
-    $failures.Add('Common feedback must not be expanded into per-leaf ADS requests.')
 }
 
 if ($failures.Count -ne 0) {
@@ -80,4 +73,4 @@ if ($failures.Count -ne 0) {
     exit 1
 }
 
-Write-Output 'PASS: Beckhoff boundary uses the validated 320-byte Common ABI and exact remaining contracts.'
+Write-Output 'PASS: Beckhoff state reads use static scalar/element leaves and tolerate missing symbols.'

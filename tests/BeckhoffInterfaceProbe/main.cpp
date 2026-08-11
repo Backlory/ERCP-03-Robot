@@ -17,90 +17,144 @@ namespace {
 enum class Access { ReadOnly, SafeZeroWrite, DangerousAction };
 
 struct SymbolSpec {
-    const char *name;
-    const char *expected_type;
+    std::string name;
+    std::string expected_type;
     std::uint32_t expected_size;
     Access access;
     bool required = true;
 };
 
-constexpr SymbolSpec kSymbols[] = {
-    {"MAIN.iPrepare_State", "INT", 2, Access::ReadOnly},
-    {"MAIN.bErro_State_Drive", "BOOL", 1, Access::ReadOnly},
-    {"MAIN.DriveErrorState", "ARRAY[1..22] OF BOOL", 22, Access::ReadOnly},
-    {"MAIN.bErro_State_Motor", "BOOL", 1, Access::ReadOnly},
-    {"MAIN.MotorErrorState", "ARRAY[1..19] OF BOOL", 19, Access::ReadOnly},
-    {"MAIN.type_of_scope", "DINT", 4, Access::ReadOnly},
-    {"MAIN.Status_Comand_FromMaster", "DINT", 4, Access::DangerousAction},
-    // Diagnostic alias used by the current RobotSystem implementation.
-    {"MAIN.Status_Command_FromMaster", "DINT", 4, Access::DangerousAction, false},
-    {"MAIN.Status_Feedback_ToMaster", "DINT", 4, Access::ReadOnly},
-    // Parent-structure diagnostics used by RobotSystem's block ADS reads.
-    {"MAIN.Info_Feedback_ToMaster", "STRUCT", 320, Access::ReadOnly, false},
-    {"MAIN.Info_Feedback_ToMaster.Follow_Length", "LREAL", 8, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Switch_Water", "BOOL", 1, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Switch_Gas", "BOOL", 1, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Switch_Suck", "BOOL", 1, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Big_Wheel", "LREAL", 8, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Small_Wheel", "LREAL", 8, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Force_Sensor", "ARRAY[1..10] OF LREAL", 80, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Power_level", "INT", 2, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.lifter", "LREAL", 8, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Deliver_Force", "LREAL", 8, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Rotate_Degree", "LREAL", 8, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Follow_Force", "LREAL", 8, Access::ReadOnly},
-    {"MAIN.Info_Feedback_ToMaster.Axes_Pos", "ARRAY[1..21] OF LREAL", 168, Access::ReadOnly},
-    {"MAIN.Emergency_Stop_FromMaster", "DINT", 4, Access::DangerousAction},
-    {"MAIN.Follow_Control_Cmd.Cmd_Follow_Comp_Joy_FromMaster", "LREAL", 8, Access::SafeZeroWrite},
-    {"MAIN.Follow_Control_Cmd.Cmd_Operator_Joy_FromMaster",
-     "ARRAY[1..9] OF LREAL",
-     72,
-     Access::SafeZeroWrite},
-    {"MAIN.Follow_Control_Cmd.Cmd_Home_Joy_FromMaster",
-     "ARRAY[1..3] OF BOOL",
-     3,
-     Access::SafeZeroWrite},
-    {"MAIN.Follow_Control_Cmd.Cmd_IO_Joy_FromMaster",
-     "ARRAY[1..3] OF BOOL",
-     3,
-     Access::SafeZeroWrite},
-    {"MAIN.ERCP_Online_flag", "BOOL", 1, Access::ReadOnly},
-    {"POU_Ercp_CycleExecute.Ercp_Ready_State", "BOOL", 1, Access::ReadOnly},
-    {"MAIN_ERCP.bERCP_Operate_State_FromMaster", "BOOL", 1, Access::SafeZeroWrite},
-    {"MAIN_ERCP.bErro_State_Drive_ERCP", "BOOL", 1, Access::ReadOnly},
-    {"MAIN_ERCP.DriveErrorState_ERCP", "ARRAY[1..13] OF BOOL", 13, Access::ReadOnly},
-    {"MAIN_ERCP.bErro_State_Motor_ERCP", "BOOL", 1, Access::ReadOnly},
-    {"MAIN_ERCP.MotorErrorState_ERCP", "ARRAY[1..11] OF BOOL", 11, Access::ReadOnly},
-    {"MAIN_ERCP.type_of_ERCP", "DINT", 4, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Status_Feedback_ToMaster", "DINT", 4, Access::ReadOnly},
-    {"MAIN_ERCP.bERCP_Load_Exchange_Dir", "BOOL", 1, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force", "LREAL", 8, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.GuideWire_Force", "LREAL", 8, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Bow_Force", "LREAL", 8, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Pos", "LREAL", 8, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.GuideWire_Pos", "LREAL", 8, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_CurPos_01", "LREAL", 8, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_CurPos_02", "LREAL", 8, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_State_01", "DINT", 4, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_State_02", "DINT", 4, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Balloon_Pressure", "INT", 2, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Operator_Pos", "LREAL", 8, Access::ReadOnly},
-    {"MAIN_ERCP.ERCP_Control_Cmd.Cmd_6Dhandle_Joy_FromMaster",
-     "ARRAY[1..6] OF LREAL",
-     48,
-     Access::SafeZeroWrite},
-    {"MAIN_ERCP.ERCP_Control_Cmd.Cmd_Button_Joy_FromMaster",
-     "ARRAY[1..3] OF BOOL",
-     3,
-     Access::SafeZeroWrite},
-    {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_01", "LREAL", 8, Access::SafeZeroWrite},
-    {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_02", "LREAL", 8, Access::SafeZeroWrite},
-    {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Pos_01", "LREAL", 8, Access::SafeZeroWrite},
-    {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Pos_02", "LREAL", 8, Access::SafeZeroWrite},
-    {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Enable_01", "BOOL", 1, Access::SafeZeroWrite},
-    {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Enable_02", "BOOL", 1, Access::SafeZeroWrite},
-    {"MAIN_ERCP.bErcp_Cooperate_Enable", "BOOL", 1, Access::SafeZeroWrite},
-};
+void AddIndexedSymbols(std::vector<SymbolSpec> &symbols,
+                       const char *prefix,
+                       const char *type,
+                       std::uint32_t size,
+                       Access access,
+                       std::size_t count,
+                       bool required = false)
+{
+    for (std::size_t i = 0; i < count; ++i) {
+        symbols.push_back(
+            {std::string(prefix) + std::to_string(i + 1) + "]", type, size, access, required});
+    }
+}
+
+std::vector<SymbolSpec> BuildSymbolSpecs()
+{
+    std::vector<SymbolSpec> symbols{
+        {"MAIN.iPrepare_State", "INT", 2, Access::ReadOnly},
+        {"MAIN.bErro_State_Drive", "BOOL", 1, Access::ReadOnly},
+        {"MAIN.bErro_State_Motor", "BOOL", 1, Access::ReadOnly},
+        {"MAIN.type_of_scope", "DINT", 4, Access::ReadOnly},
+        {"MAIN.Status_Comand_FromMaster", "DINT", 4, Access::DangerousAction},
+        // Diagnostic alias used by the current RobotSystem implementation.
+        {"MAIN.Status_Command_FromMaster", "DINT", 4, Access::DangerousAction, false},
+        {"MAIN.Status_Feedback_ToMaster", "DINT", 4, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Follow_Length", "LREAL", 8, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Switch_Water", "BOOL", 1, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Switch_Gas", "BOOL", 1, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Switch_Suck", "BOOL", 1, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Big_Wheel", "LREAL", 8, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Small_Wheel", "LREAL", 8, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Power_level", "INT", 2, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.lifter", "LREAL", 8, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Deliver_Force", "LREAL", 8, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Rotate_Degree", "LREAL", 8, Access::ReadOnly},
+        {"MAIN.Info_Feedback_ToMaster.Follow_Force", "LREAL", 8, Access::ReadOnly},
+        {"MAIN.Emergency_Stop_FromMaster", "DINT", 4, Access::DangerousAction},
+        {"MAIN.Follow_Control_Cmd.Cmd_Follow_Comp_Joy_FromMaster",
+         "LREAL",
+         8,
+         Access::SafeZeroWrite},
+        {"MAIN.Follow_Control_Cmd.Cmd_Operator_Joy_FromMaster",
+         "ARRAY[1..9] OF LREAL",
+         72,
+         Access::SafeZeroWrite},
+        {"MAIN.Follow_Control_Cmd.Cmd_Home_Joy_FromMaster",
+         "ARRAY[1..3] OF BOOL",
+         3,
+         Access::SafeZeroWrite},
+        {"MAIN.Follow_Control_Cmd.Cmd_IO_Joy_FromMaster",
+         "ARRAY[1..3] OF BOOL",
+         3,
+         Access::SafeZeroWrite},
+        {"MAIN.ERCP_Online_flag", "BOOL", 1, Access::ReadOnly},
+        {"POU_Ercp_CycleExecute.Ercp_Ready_State", "BOOL", 1, Access::ReadOnly},
+        {"MAIN_ERCP.bERCP_Operate_State_FromMaster", "BOOL", 1, Access::SafeZeroWrite},
+        {"MAIN_ERCP.bErro_State_Drive_ERCP", "BOOL", 1, Access::ReadOnly},
+        {"MAIN_ERCP.bErro_State_Motor_ERCP", "BOOL", 1, Access::ReadOnly},
+        {"MAIN_ERCP.type_of_ERCP", "DINT", 4, Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Status_Feedback_ToMaster", "DINT", 4, Access::ReadOnly},
+        {"MAIN_ERCP.bERCP_Load_Exchange_Dir", "BOOL", 1, Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force",
+         "LREAL",
+         8,
+         Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.GuideWire_Force", "LREAL", 8, Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Bow_Force", "LREAL", 8, Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Pos",
+         "LREAL",
+         8,
+         Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.GuideWire_Pos", "LREAL", 8, Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_CurPos_01",
+         "LREAL",
+         8,
+         Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_CurPos_02",
+         "LREAL",
+         8,
+         Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_State_01", "DINT", 4, Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Inject_State_02", "DINT", 4, Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Balloon_Pressure", "INT", 2, Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Info_Feedback_ToMaster.Operator_Pos", "LREAL", 8, Access::ReadOnly},
+        {"MAIN_ERCP.ERCP_Control_Cmd.Cmd_6Dhandle_Joy_FromMaster",
+         "ARRAY[1..6] OF LREAL",
+         48,
+         Access::SafeZeroWrite},
+        {"MAIN_ERCP.ERCP_Control_Cmd.Cmd_Button_Joy_FromMaster",
+         "ARRAY[1..3] OF BOOL",
+         3,
+         Access::SafeZeroWrite},
+        {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_01", "LREAL", 8, Access::SafeZeroWrite},
+        {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Vel_02", "LREAL", 8, Access::SafeZeroWrite},
+        {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Pos_01", "LREAL", 8, Access::SafeZeroWrite},
+        {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Pos_02", "LREAL", 8, Access::SafeZeroWrite},
+        {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Enable_01", "BOOL", 1, Access::SafeZeroWrite},
+        {"MAIN_ERCP.ERCP_Inject_Cmd.Inject_Enable_02", "BOOL", 1, Access::SafeZeroWrite},
+        {"MAIN_ERCP.bErcp_Cooperate_Enable", "BOOL", 1, Access::SafeZeroWrite},
+    };
+
+    AddIndexedSymbols(symbols, "MAIN.DriveErrorState[", "BOOL", 1, Access::ReadOnly, 22);
+    AddIndexedSymbols(symbols, "MAIN.MotorErrorState[", "BOOL", 1, Access::ReadOnly, 19);
+    AddIndexedSymbols(symbols,
+                      "MAIN.Info_Feedback_ToMaster.Force_Sensor[",
+                      "LREAL",
+                      8,
+                      Access::ReadOnly,
+                      10);
+    AddIndexedSymbols(symbols,
+                      "MAIN.Info_Feedback_ToMaster.Axes_Pos[",
+                      "LREAL",
+                      8,
+                      Access::ReadOnly,
+                      21);
+    AddIndexedSymbols(symbols,
+                      "MAIN_ERCP.DriveErrorState_ERCP[",
+                      "BOOL",
+                      1,
+                      Access::ReadOnly,
+                      13);
+    AddIndexedSymbols(symbols,
+                      "MAIN_ERCP.MotorErrorState_ERCP[",
+                      "BOOL",
+                      1,
+                      Access::ReadOnly,
+                      11);
+    return symbols;
+}
+
+const auto kSymbols = BuildSymbolSpecs();
 
 struct Options {
     std::string net_id = "169.254.213.62.1.1";
@@ -279,7 +333,7 @@ int main(int argc, char **argv)
 
     for (const auto &spec : kSymbols) {
         OnlineSymbol online;
-        const long query_error = QuerySymbol(address, spec.name, online);
+        const long query_error = QuerySymbol(address, spec.name.c_str(), online);
         long read_error = ADSERR_NOERR;
         long write_error = ADSERR_NOERR;
         std::vector<std::uint8_t> bytes;
@@ -337,7 +391,7 @@ int main(int argc, char **argv)
     }
 
     AdsPortClose();
-    std::cout << "\nSUMMARY total=" << std::size(kSymbols) << " pass=" << passed
+    std::cout << "\nSUMMARY total=" << kSymbols.size() << " pass=" << passed
               << " fail=" << failed << " safe_zero_writes=" << written << '\n';
     return failed == 0 ? 0 : 1;
 }

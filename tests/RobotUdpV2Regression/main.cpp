@@ -29,14 +29,6 @@ void Expect(bool condition, const char *message)
     std::cerr << "FAIL: " << message << '\n';
 }
 
-template <typename T>
-void PutFeedbackValue(std::array<std::uint8_t, device::beckhoff::RobotFeedbackBlockSize> &block,
-                      std::size_t offset,
-                      const T &value)
-{
-    std::memcpy(block.data() + offset, &value, sizeof(value));
-}
-
 protocol::ControlPayload SampleControl()
 {
     protocol::ControlPayload payload;
@@ -63,49 +55,55 @@ protocol::Bytes ControlPacket(protocol::Source source,
     return bytes;
 }
 
-void TestBeckhoffFeedbackLayout()
+void TestBeckhoffFeedbackLeaves()
 {
-    std::array<std::uint8_t, device::beckhoff::RobotFeedbackBlockSize> block{};
-    std::array<double, 21> axes{};
-    std::array<double, 10> forces{};
-    for (std::size_t index = 0; index < axes.size(); ++index) {
-        axes[index] = 100.0 + index;
+    device::beckhoff::RobotFeedbackLeaves feedback{};
+    for (std::size_t index = 0; index < feedback.axes_pos.size(); ++index) {
+        feedback.axes_pos[index] = 100.0 + index;
     }
-    for (std::size_t index = 0; index < forces.size(); ++index) {
-        forces[index] = 10.0 + index;
+    for (std::size_t index = 0; index < feedback.force_sensor.size(); ++index) {
+        feedback.force_sensor[index] = 10.0 + index;
     }
-    PutFeedbackValue(block, 0, 0.25);
-    PutFeedbackValue(block, 8, true);
-    PutFeedbackValue(block, 10, true);
-    PutFeedbackValue(block, 16, axes);
-    PutFeedbackValue(block, 184, 1.25);
-    PutFeedbackValue(block, 192, -2.5);
-    PutFeedbackValue(block, 200, forces);
-    PutFeedbackValue(block, 280, std::int16_t{73});
-    PutFeedbackValue(block, 288, 3.25);
-    PutFeedbackValue(block, 296, 4.25);
-    PutFeedbackValue(block, 304, 5.25);
-    PutFeedbackValue(block, 312, 6.25);
-
-    device::beckhoff::RobotFeedbackData feedback{};
-    Expect(device::beckhoff::DecodeRobotFeedbackBlock(block.data(), block.size(), feedback),
-           "320-byte Beckhoff feedback block decodes");
-    Expect(!device::beckhoff::DecodeRobotFeedbackBlock(block.data(), block.size() - 1, feedback),
-           "incorrect Beckhoff feedback block size is rejected");
+    feedback.follow_length = 0.25;
+    feedback.switch_water = true;
+    feedback.switch_suck = true;
+    feedback.big_wheel = 1.25;
+    feedback.small_wheel = -2.5;
+    feedback.power_level = 73;
+    feedback.lifter = 3.25;
+    feedback.deliver_force = 4.25;
+    feedback.rotate_degree = 5.25;
+    feedback.follow_force = 6.25;
 
     device::beckhoff::BeckhoffSnapshot snapshot;
-    device::beckhoff::ApplyRobotFeedback(feedback, snapshot);
+    device::beckhoff::RobotFeedbackLeafErrors errors{};
+    device::beckhoff::ApplyRobotFeedback(feedback, errors, snapshot);
     Expect(snapshot.output_switches == 0x0005 && snapshot.power_level == 73,
-           "Beckhoff switches and power preserve deployed layout");
+           "leaf feedback switches and power map to the local snapshot");
     Expect(snapshot.common_values[0] == 0.25 && snapshot.common_values[1] == 1.25 &&
                snapshot.common_values[2] == -2.5,
-           "wheel feedback is not replaced by Axes_Pos");
+           "leaf wheel feedback is not replaced by Axes_Pos");
     Expect(snapshot.common_values[3] == 10.0 && snapshot.common_values[12] == 19.0 &&
                snapshot.common_values[13] == 3.25 && snapshot.common_values[14] == 4.25 &&
                snapshot.common_values[15] == 5.25 && snapshot.common_values[16] == 6.25,
-           "named Beckhoff feedback maps to the V3 common region");
+           "named leaf feedback maps to the V3 common region");
     Expect(snapshot.common_values[17] == 100.0 && snapshot.common_values[35] == 118.0,
-           "V3 axes contain the first 19 of the PLC's 21 Axes_Pos values");
+           "the local snapshot keeps its 19-axis publication capacity");
+
+    // Local old-PLC simulation: the scalar leaves and early array elements
+    // succeed, while missing array elements and one missing BOOL are marked
+    // unavailable without invalidating the values that did succeed.
+    errors[device::beckhoff::kFeedbackSwitchGasIndex] = 0x701;
+    errors[device::beckhoff::kFeedbackForceSensorBaseIndex + 9] = 0x701;
+    errors[device::beckhoff::kFeedbackAxesBaseIndex + 18] = 0x701;
+    device::beckhoff::ApplyRobotFeedback(feedback, errors, snapshot);
+    Expect((snapshot.output_switches & (1u << 1)) == 0 &&
+               (snapshot.output_switches & (1u << 0)) != 0,
+           "missing leaf BOOL is unavailable without hiding other switches");
+    Expect(snapshot.common_values[3] == 10.0 && snapshot.common_values[12] == 0.0,
+           "available and unavailable force leaves are kept separate");
+    Expect(snapshot.common_values[17] == 100.0 && snapshot.common_values[35] == 0.0,
+           "available and unavailable axis leaves are kept separate");
 }
 
 void TestCodec()
@@ -699,7 +697,7 @@ int main()
 {
     std::cout << "kRobotUdpV2SyncVersion = " << protocol::kRobotUdpV2SyncVersion << '\n';
 
-    TestBeckhoffFeedbackLayout();
+    TestBeckhoffFeedbackLeaves();
     TestCodec();
     TestFullStatus();
     TestSequenceAndSessions();
