@@ -798,7 +798,7 @@ bool Beckhoff_Motor::BuildAddr(string sIP, int iPort, AmsAddr &bfAddr)
     return true;
 }
 
-// 更新状态线程函�?
+// 更新状态线程
 void Beckhoff_Motor::StateUpdateThread()
 {
     auto nextErcpProbe = std::chrono::steady_clock::now();

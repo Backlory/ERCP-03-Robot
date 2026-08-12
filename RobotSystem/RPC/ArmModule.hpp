@@ -17,6 +17,7 @@ enum class arm_signal_t {
     s_initialized,
     s_folded,
     s_opened,
+    s_following,
     s_deinitialized,
 };
 
@@ -54,6 +55,7 @@ private:
     std::function<void()> MakeTask(const state_t &, const state_t &);
 
     bool IsConnected(state_t to);
+    bool SynchronizeWithBeckhoffFeedback();
     bool OnError(const transition_error &) override;
     bool OnRescue(const transition_rescue &) override;
     int GetErrorCode(const boost::exception_ptr &_exception) const override;
@@ -102,6 +104,13 @@ protected:
             transition_sp< t::A2_Inited,         ex_signal,          t::A3_Folded,       nullptr,  &ArmModule::SignalCheck<s::s_folded>>,
             transition_sp< t::A2_Inited,         ex_signal,          t::A4_Opened,       nullptr,  &ArmModule::SignalCheck<s::s_opened>>,
             transition_sp< t::A3_Folded,         ex_signal,          t::A4_Opened,       nullptr,  &ArmModule::SignalCheck<s::s_opened>>,
+            // Beckhoff feedback is authoritative for the physical arm mode. These
+            // transitions only reconcile the RPC state; they do not write PLC commands.
+            transition_sp< t::A2_Inited,         ex_signal,          t::A5_Following,    nullptr,  &ArmModule::SignalCheck<s::s_following>>,
+            transition_sp< t::A3_Folded,         ex_signal,          t::A5_Following,    nullptr,  &ArmModule::SignalCheck<s::s_following>>,
+            transition_sp< t::A4_Opened,         ex_signal,          t::A5_Following,    nullptr,  &ArmModule::SignalCheck<s::s_following>>,
+            transition_sp< t::A5_Following,      ex_signal,          t::A4_Opened,       nullptr,  &ArmModule::SignalCheck<s::s_opened>>,
+            transition_sp< t::A5_Following,      ex_signal,          t::A3_Folded,       nullptr,  &ArmModule::SignalCheck<s::s_folded>>,
             transition_sp< t::A4_Opened,         ex_trigger,         t::A5_Following,    nullptr,  &ArmModule::FollowStartCheck>,
             transition_sp< t::A2_Inited,         ex_trigger,          t::A5_Following,      nullptr,  &ArmModule::FollowStartCheck>,
             transition_sp< t::A5_Following,      ex_trigger,         t::A4_Opened,       nullptr,  &ArmModule::FollowStopCheck>,

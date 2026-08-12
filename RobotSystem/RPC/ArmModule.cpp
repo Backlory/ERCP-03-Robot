@@ -1,6 +1,11 @@
 ﻿#pragma once
+#include <chrono>
+#include <thread>
+
 #include "robot_error.h"
 #include "robot_settings.hpp"
+#include "robot_devices.h"
+#include "yunsbot_config.h"
 #include "ArmModule.hpp"
 
 namespace ercp {
@@ -35,12 +40,91 @@ bool ArmModule::DeInitialize()
 
 bool ArmModule::StartFollow()
 {
+    // The PLC feedback is authoritative. If a previous command left the RPC
+    // state at A5 while the arm is physically back at state 21, reconcile the
+    // internal state before interpreting this click as "start follow".
+    if (!SynchronizeWithBeckhoffFeedback()) {
+        return false;
+    }
     return this->PostAsyncEvent(ex_trigger{});
 }
 
 bool ArmModule::StopFollow()
 {
+    // Likewise, a state-31 feedback can arrive while the RPC state is still
+    // A2/A4. Reconcile it to A5 so this command is interpreted as "exit
+    // follow", not as another start-follow trigger from A4.
+    if (!SynchronizeWithBeckhoffFeedback()) {
+        return false;
+    }
     return this->PostAsyncEvent(ex_trigger{});
+}
+
+bool ArmModule::SynchronizeWithBeckhoffFeedback()
+{
+    const auto feedback = GetRobot().BeckhoffArmMoveState();
+    const auto current = get_current_state();
+
+    arm_signal_t signal;
+    state_t target;
+    bool needs_sync = false;
+
+    if (feedback == beckhoff_arm_move_state::BAMS_FOLDED &&
+        (current == state_t::A2_Inited || current == state_t::A4_Opened ||
+         current == state_t::A5_Following)) {
+        signal = arm_signal_t::s_folded;
+        target = state_t::A3_Folded;
+        needs_sync = true;
+    } else if (feedback == beckhoff_arm_move_state::BAMS_OPENED &&
+               (current == state_t::A2_Inited || current == state_t::A3_Folded ||
+                current == state_t::A5_Following)) {
+        signal = arm_signal_t::s_opened;
+        target = state_t::A4_Opened;
+        needs_sync = true;
+    } else if ((feedback == beckhoff_arm_move_state::BAMS_FOLLOWING ||
+                feedback == beckhoff_arm_move_state::BAMS_FOLLOWED) &&
+               (current == state_t::A2_Inited || current == state_t::A3_Folded ||
+                current == state_t::A4_Opened)) {
+        signal = arm_signal_t::s_following;
+        target = state_t::A5_Following;
+        needs_sync = true;
+    }
+
+    if (!needs_sync) {
+        return true;
+    }
+
+    if (IsTaskBusy()) {
+        return false;
+    }
+
+    if (IsTransition()) {
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(500);
+        while (IsTransition() && std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        if (get_current_state() == target) {
+            return true;
+        }
+        if (IsTransition()) {
+            return false;
+        }
+    }
+
+    if (!PostAsyncEvent(ex_signal{signal})) {
+        return false;
+    }
+
+    const auto deadline = std::chrono::steady_clock::now() +
+                          std::chrono::milliseconds(500);
+    while (std::chrono::steady_clock::now() < deadline) {
+        if (get_current_state() == target) {
+            return true;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return get_current_state() == target;
 }
 
 //---------------------------------------------------------------------
@@ -52,6 +136,12 @@ bool ArmModule::IsConnected(state_t to)
 
 bool ArmModule::GotoState(state_t state)
 {
+    // Reconcile stale RPC state with the physical Beckhoff feedback before
+    // checking the transition graph. The reconciliation itself never writes
+    // a PLC command.
+    if (!SynchronizeWithBeckhoffFeedback()) {
+        return false;
+    }
     if (!IsConnected(state)) {
         ROBOT_ERROR(GetSettings().Basic.Verbose() > 0,
                     fmt::format("{} has no connection between {} and {}.",
