@@ -12,6 +12,10 @@
 using namespace server;
 using poco_array = Poco::SharedPtr<Poco::JSON::Array>;
 
+/**
+ * @brief 将允许的 JSON 类型列表格式化为错误消息中的可读文本。
+ * @details 按登记顺序连接类型名称，并使用竖线表示多个可选类型。
+ */
 std::string format_types(const type_list &types)
 {
     std::string str;
@@ -29,6 +33,10 @@ std::string format_types(const type_list &types)
 
 class basic_request : public request_case {
 public:
+    /**
+     * @brief 校验通用请求字段是否存在且类型正确。
+     * @details 逐项检查必填字段和可选字段的类型，返回空字符串表示通过，否则返回面向客户端的错误原因。
+     */
     std::string checker(const Json &json) override
     {
         for (const auto &k : info) {
@@ -55,6 +63,10 @@ public:
 
 class robot_info : public basic_request {
 public:
+    /**
+     * @brief 生成机器人当前状态及各模块进度的 JSON 响应。
+     * @details 先映射机器人运行级状态，再分别收集模块状态和步骤名称，保持响应结构与旧接口一致。
+     */
     Json handler(const Json &json) override
     {
         Json d;
@@ -89,6 +101,10 @@ public:
 
 class robot_state : public basic_request {
 public:
+    /**
+     * @brief 生成机器人运行状态、模块状态和当前步骤的 JSON 响应。
+     * @details 先将机器人级状态映射为 running，再分别遍历模块注册表填充 modules 与 step 两组信息。
+     */
     Json handler(const Json &json) override
     {
         Json d;
@@ -134,6 +150,10 @@ public:
         info.emplace_back(keys_info{"action", {typeid(std::string)}});
     }
 
+    /**
+     * @brief 校验模块动作请求中的模块名和动作名。
+     * @details 先复用通用字段校验，再分别对 type 和 action 与当前注册表比对。
+     */
     std::string checker(const Json &json) override
     {
         auto ret = basic_request::checker(json);
@@ -160,6 +180,10 @@ public:
         return "";
     }
 
+    /**
+     * @brief 将模块动作请求分派到 Robot 接口并封装业务结果。
+     * @details 提取模块和动作字符串，调用统一动作入口；失败时额外写入业务错误信息供 HTTP 信封转换。
+     */
     Json handler(const Json &json) override
     {
         Json d;
@@ -183,6 +207,10 @@ public:
     {
     }
 
+    /**
+     * @brief 执行机器人生命周期动作并返回成功状态。
+     * @details 按 action 选择启动、关闭、初始化、中断或跳过接口，统一把结果放入 status 字段。
+     */
     Json handler(const Json &json) override
     {
         Json d;
@@ -256,6 +284,10 @@ public:
 
 class sensio_base : public basic_request {
 public:
+    /**
+     * @brief 返回传感器、GPIO 输入和 GPIO 输出的通道目录。
+     * @details 分别遍历三类注册表，构造包含 channel 与 name 的 JSON 数组供客户端发现设备能力。
+     */
     Json handler(const Json &json) override
     {
         Json d;
@@ -301,6 +333,10 @@ public:
         info.emplace_back(keys_info{"value", {typeid(int64_t)}});
     }
 
+    /**
+     * @brief 校验 GPIO 输出操作中的通道编号。
+     * @details 先执行通用字段校验，再确认请求编号存在于当前输出注册表。
+     */
     std::string checker(const Json &json) override
     {
         auto ret = basic_request::checker(json);
@@ -333,6 +369,10 @@ public:
 
 class arm_status : public basic_request {
 public:
+    /**
+     * @brief 读取机械臂位姿、关节、速度和目标等状态并生成 JSON 响应。
+     * @details 每类数据只有在底层读取成功时才写入，同时补充初始化、停止和到位标志。
+     */
     Json handler(const Json &json) override
     {
         Json d;
@@ -372,6 +412,10 @@ public:
         info.emplace_back(keys_info{"tcp", {typeid(bool)}, true});
     }
 
+    /**
+     * @brief 校验机械臂相对运动请求的位移数组。
+     * @details 复用通用字段检查后验证数组长度和每个元素均为数值，确保构造 Vector6d 前输入完整。
+     */
     std::string checker(const Json &json) override
     {
         auto ret = basic_request::checker(json);
@@ -391,6 +435,10 @@ public:
         return "";
     }
 
+    /**
+     * @brief 将 JSON 位移数组转换为机械臂相对运动命令并执行。
+     * @details 读取 dpose 与 tcp 选项，转换为六维向量后调用操纵器接口返回执行状态。
+     */
     Json handler(const Json &json) override
     {
         auto targets = *json.get("dpose").extract<poco_array>();
@@ -433,6 +481,10 @@ class beckhoff_read : public basic_request {
 
 private:
 public:
+    /**
+     * @brief 检查 Beckhoff 设备是否已打开，作为旧读取接口的前置条件。
+     * @details 当前接口保留历史上可选字段校验的占位代码，只执行连接状态检查并返回诊断文本。
+     */
     std::string checker(const Json &json) override
     {
         if (!beckhoffator::isOpen()) {
@@ -452,6 +504,10 @@ public:
         return "";
     }
 
+    /**
+     * @brief 保留 Beckhoff 读取接口的 JSON 响应入口。
+     * @details 当前实现只返回空对象，实际字段读取逻辑仍由注释中的旧接口扩展点描述。
+     */
     Json handler(const Json &json) override
     {
         Json d;
@@ -477,6 +533,10 @@ class beckhoff_write : public basic_request {
 
 private:
 public:
+    /**
+     * @brief 检查 Beckhoff 设备是否已打开，作为旧写入接口的前置条件。
+     * @details 通过统一的设备打开状态阻止离线写入，其他历史参数校验暂未启用。
+     */
     std::string checker(const Json &json) override
     {
         if (!beckhoffator::isOpen()) {
@@ -496,6 +556,10 @@ public:
         return "";
     }
 
+    /**
+     * @brief 保留 Beckhoff 写入接口的 JSON 响应入口。
+     * @details 当前实现不执行具体写入，只返回空对象；新增写入动作应在此处接入明确的字段校验和设备接口。
+     */
     Json handler(const Json &json) override
     {
         Json d;
@@ -517,6 +581,10 @@ class beckhoff_isopen : public basic_request {
 
 private:
 public:
+    /**
+     * @brief 检查 Beckhoff 设备连接状态。
+     * @details 设备未打开时返回前置错误；打开时由 handler 返回 status，保持旧 HTTP 响应结构。
+     */
     std::string checker(const Json &json) override
     {
         if (!beckhoffator::isOpen()) {
@@ -536,6 +604,10 @@ public:
         return "";
     }
 
+    /**
+     * @brief 将 Beckhoff 当前连接状态封装为 JSON status 字段。
+     * @details 读取统一设备接口的 isOpen 结果，不直接暴露 ADS 底层细节。
+     */
     Json handler(const Json &json) override
     {
         Json d;
@@ -554,6 +626,10 @@ public:
 };
 //-----------------------------------------------------------------------------
 
+/**
+ * @brief 注册 RobotSystem HTTP 处理器。
+ * @details 按 robot、settings、sensio、beckhoff 和 arm 领域建立路径到 request_case 的映射，构造后供服务器分派请求。
+ */
 Handler::Handler()
 {
     using vt = decltype(handlers)::mapped_type;

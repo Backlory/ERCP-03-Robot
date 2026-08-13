@@ -51,6 +51,10 @@ void HttpServer::uninitialize()
     ServerApplication::uninitialize();
 }
 
+/**
+ * @brief 功能：绑定配置地址和端口，启动 Poco HTTP 服务并等待进程终止。
+ * @details 机制：读取端口与 basic.bind，创建 HTTPServer，进入阻塞等待；收到终止请求后按顺序停止服务并返回。
+ */
 int HttpServer::main(const std::vector<std::string> &args)
 {
     unsigned short port = (unsigned short)config().getInt("HttpServer.port", _port);
@@ -85,6 +89,10 @@ int HttpServer::main(const std::vector<std::string> &args)
 
 //-----------------------------------------------------------------------------
 
+/**
+ * @brief 功能：解析 HTTP 路径和 JSON 请求体，完成路由校验、handler 分派和统一错误封装。
+ * @details 机制：按“路径兼容处理—路由查找—请求体解析—参数校验—业务执行”顺序推进，任一阶段失败都返回 error 字段。
+ */
 Json Handler::innerHandler(Request &req)
 {
     Json ret;
@@ -157,6 +165,10 @@ Json Handler::innerHandler(Request &req)
     return ret;
 }
 
+/**
+ * @brief 功能：设置 HTTP 响应头，将内部业务结果包装为统一 JSON 信封并写回客户端。
+ * @details 机制：先设置 CORS/Content-Type/状态码，再调用 innerHandler；路由错误和业务失败分别映射到外层 status/info。
+ */
 void Handler::handleRequest(Request &req, Response &res)
 {
     // Make feedback by data、

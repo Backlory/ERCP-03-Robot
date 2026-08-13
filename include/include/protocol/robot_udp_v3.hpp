@@ -421,6 +421,10 @@ inline bool validSourceFor(MessageType type, Source source)
     return source == Source::Robot;
 }
 
+/**
+ * @brief 功能：校验 Robot UDP 消息头的魔数、版本、长度、类型和来源。
+ * @details 机制：按协议不变量逐项检查固定字段、保留字段和会话号，第一处失败通过 error 返回原因。
+ */
 inline bool validHeader(const Header &header, MessageType expected, std::string *error)
 {
     if (header.magic != kMagic) return fail(error, "invalid magic");
@@ -442,6 +446,10 @@ inline bool validSwitches(std::uint16_t switches, std::string *error)
         : fail(error, "unknown control switch bit");
 }
 
+/**
+ * @brief 功能：校验控制载荷中的位域、动作枚举和浮点值。
+ * @details 机制：先检查开关与枚举范围，再检查各组数值是否有限且处于允许范围，保证进入编解码和设备适配器的数据可安全使用。
+ */
 inline bool validControl(const ControlPayload &payload, std::string *error)
 {
     if (!validSwitches(payload.switches, error)) return false;
@@ -493,6 +501,10 @@ inline bool finiteF64(const Bytes &bytes, std::size_t offset)
     return std::isfinite(value);
 }
 
+/**
+ * @brief 功能：返回已知状态组对应的固定载荷长度。
+ * @details 机制：以 GroupId 为索引集中维护 wire schema 的长度，未知扩展组返回零并交由上层按扩展规则处理。
+ */
 inline std::size_t knownGroupSize(std::uint16_t id)
 {
     switch (static_cast<GroupId>(id)) {
@@ -508,14 +520,20 @@ inline std::size_t knownGroupSize(std::uint16_t id)
     }
 }
 
+/**
+ * @brief 功能：校验一个已知状态组的版本、长度、保留字段和语义范围。
+ * @details 机制：先做公共 schema 检查，再按状态组分别验证枚举、位域、浮点数和 padding；这是状态解码进入领域模型前的协议接缝。
+ */
 inline bool validKnownGroup(const StatusGroup &group, std::string *error)
 {
+    // 阶段一：确认已知组的版本和固定载荷长度，先阻断结构不完整的数据。
     const std::size_t expected = knownGroupSize(group.id);
     if (expected == 0) return true;
     if (group.version != 1 || group.payload.size() != expected) {
         return fail(error, "known status group version or size mismatch");
     }
 
+    // 阶段二：按组类型检查枚举、位域、浮点数和保留区的语义约束。
     switch (static_cast<GroupId>(group.id)) {
     case GroupId::RobotRuntime:
         {
@@ -605,6 +623,10 @@ inline bool validKnownGroup(const StatusGroup &group, std::string *error)
     }
 }
 
+/**
+ * @brief 功能：从大端字节流读取并转换消息头字段。
+ * @details 机制：按固定 wire 顺序读取所有字段，读取完整后再转换消息类型和来源枚举，截断输入立即失败。
+ */
 inline bool readHeader(Reader &reader, Header &header, std::string *error)
 {
     std::uint16_t message = 0;
@@ -622,6 +644,10 @@ inline bool readHeader(Reader &reader, Header &header, std::string *error)
     return true;
 }
 
+/**
+ * @brief 功能：按协议固定顺序把消息头写入大端字节流。
+ * @details 机制：使用实际载荷长度覆盖 header 的 payload_size，其余字段按 wire ABI 写出，供控制和状态编码共用。
+ */
 inline void writeHeader(Writer &writer, const Header &header, std::uint32_t payloadSize)
 {
     writer.u32(header.magic);
@@ -640,9 +666,14 @@ inline void writeHeader(Writer &writer, const Header &header, std::uint32_t payl
 
 } // namespace detail
 
+/**
+ * @brief 功能：把 RobotControl 领域载荷编码为固定长度 UDP 控制包。
+ * @details 机制：先校验消息头和控制值，再按字段线序写入数值、开关、ERCP 扩展和保留字节，最后确认输出长度保持协议约束。
+ */
 inline bool encodeControl(const Header &header, const ControlPayload &payload, Bytes &output,
     std::string *error = nullptr)
 {
+    // 阶段一：校验头部和控制载荷；阶段二：按固定线序写入字段及保留字节；阶段三：确认包长未漂移。
     if (!detail::validHeader(header, MessageType::RobotControl, error)) return false;
     if (!detail::validControl(payload, error)) return false;
 
@@ -662,9 +693,14 @@ inline bool encodeControl(const Header &header, const ControlPayload &payload, B
     return output.size() == kControlPacketSize;
 }
 
+/**
+ * @brief 功能：把固定长度 UDP 控制包解码为控制消息和领域载荷。
+ * @details 机制：先验证输入长度和消息头，再按字段顺序读取、校验保留字节并确认没有尾部残留，避免部分解析被误当成有效命令。
+ */
 inline bool decodeControl(const std::uint8_t *data, std::size_t size, Header &header,
     ControlPayload &payload, std::string *error = nullptr)
 {
+    // 阶段一：校验固定包长和头部；阶段二：读取控制字段；阶段三：检查保留区、数值约束和尾部消费。
     if (data == nullptr || size != kControlPacketSize) return detail::fail(error, "invalid control size");
     detail::Reader reader(data, size);
     if (!detail::readHeader(reader, header, error)) return false;
@@ -688,6 +724,10 @@ inline bool decodeControl(const std::uint8_t *data, std::size_t size, Header &he
     return reader.remaining() == 0;
 }
 
+/**
+ * @brief 功能：判断状态组集合是否构成完整状态快照。
+ * @details 机制：要求八个已知组按固定 ID、版本和长度完整出现，供固定 1200 字节状态包编码与解码使用。
+ */
 inline bool isFullStatus(const std::vector<StatusGroup> &groups)
 {
     if (groups.size() != 8) return false;
@@ -701,9 +741,14 @@ inline bool isFullStatus(const std::vector<StatusGroup> &groups)
     return true;
 }
 
+/**
+ * @brief 功能：把可变状态组集合编码为 RobotStatus UDP 包。
+ * @details 机制：先检查组数量、重复 ID、每组 schema 和总长度，再写目录与载荷；完整状态额外保持 1200 字节 wire 契约。
+ */
 inline bool encodeStatus(const Header &header, const std::vector<StatusGroup> &groups, Bytes &output,
     std::string *error = nullptr)
 {
+    // 阶段一：校验消息头、组目录、组载荷和最终包长。
     if (!detail::validHeader(header, MessageType::RobotStatus, error)) return false;
     if (groups.size() > 0xFFFFu) return detail::fail(error, "too many status groups");
 
@@ -725,6 +770,7 @@ inline bool encodeStatus(const Header &header, const std::vector<StatusGroup> &g
     }
     if (payloadSize + kHeaderSize > kMaxPacketSize) return detail::fail(error, "status packet too large");
 
+    // 阶段二：按照目录头、组头、组载荷的固定线序写入输出缓冲区。
     output.clear();
     output.reserve(kHeaderSize + payloadSize);
     detail::Writer writer(output);
@@ -749,9 +795,15 @@ inline bool encodeFullStatus(const Header &header, const std::vector<StatusGroup
     return encodeStatus(header, groups, output, error);
 }
 
+/**
+ * @brief 功能：解析可变状态组目录和载荷并执行协议校验。
+ * @details 机制：读取头和目录后逐组检查长度、重复 ID、已知组语义以及包尾消费情况，最终形成可供上层映射的 StatusMessage。
+ */
 inline bool decodeStatus(const std::uint8_t *data, std::size_t size, StatusMessage &message,
     std::string *error = nullptr)
 {
+    // 阶段一：校验包长和头部；阶段二：解析目录及状态组；阶段三：确认所有字节都被合法消费。
+    // 阶段一：确认包大小并读取、校验公共消息头。
     if (data == nullptr || size < kHeaderSize + kStatusDirectorySize || size > kMaxPacketSize) {
         return detail::fail(error, "invalid status size");
     }
@@ -770,6 +822,7 @@ inline bool decodeStatus(const std::uint8_t *data, std::size_t size, StatusMessa
         return detail::fail(error, "invalid status directory");
     }
 
+    // 阶段二：读取目录中的每个状态组，校验重复项并复制有效载荷。
     message.groups.clear();
     bool seen[9] = {};
     for (std::uint16_t i = 0; i < groupCount; ++i) {
@@ -808,6 +861,10 @@ inline StatusGroup group(GroupId id, std::uint64_t sampledAt, Bytes payload)
     return result;
 }
 
+/**
+ * @brief 功能：把一条已应用控制命令审计记录写入状态组。
+ * @details 机制：复用控制载荷的固定线序，并追加来源、写入结果、会话序号、时间戳和 ADS 错误，保留字段始终写零。
+ */
 inline void writeAppliedCommand(Writer &writer, const AppliedCommandRecord &record)
 {
     for (double value : record.command.values) writer.f64(value);
@@ -830,6 +887,10 @@ inline void writeAppliedCommand(Writer &writer, const AppliedCommandRecord &reco
     writer.u32(0);
 }
 
+/**
+ * @brief 功能：从状态组中读取一条已应用控制命令审计记录。
+ * @details 机制：按写入线序读取控制字段和审计元数据，检查所有保留字段后再转换来源与结果枚举。
+ */
 inline bool readAppliedCommand(Reader &reader, AppliedCommandRecord &record)
 {
     for (double &value : record.command.values) {
@@ -871,11 +932,17 @@ inline const StatusGroup *findGroup(const StatusMessage &message, GroupId id)
 
 } // namespace detail
 
+/**
+ * @brief 功能：把完整机器人状态快照拆分为固定顺序的状态组。
+ * @details 机制：依次构造运行时、Beckhoff、保留、ERCP、应用命令、ADS 诊断和扩展组，使领域快照与 wire 目录保持一一对应。
+ */
 inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &status)
 {
+    // 阶段一：准备固定数量的组容器和可复用的字节缓冲区。
     std::vector<StatusGroup> groups;
     groups.reserve(8);
 
+    // 阶段二：按协议规定的组顺序序列化运行时、Beckhoff 和保留信息。
     Bytes bytes;
     bytes.reserve(312);
     {
@@ -889,6 +956,7 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
     }
     groups.push_back(detail::group(GroupId::RobotRuntime, status.sampled_at_unix_ns[0], std::move(bytes)));
 
+    // 阶段三：序列化 ERCP 状态、反馈和两条应用命令审计记录。
     bytes.clear();
     {
         detail::Writer writer(bytes);
@@ -909,6 +977,7 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
     groups.push_back(
         detail::group(GroupId::Reserved, status.sampled_at_unix_ns[2], std::move(bytes)));
 
+    // 阶段四：序列化 ADS 诊断及扩展保留组，形成完整八组快照。
     bytes.clear();
     {
         detail::Writer writer(bytes);
@@ -980,9 +1049,14 @@ inline bool encodeFullStatus(const Header &header, const FullStatusPayload &stat
     return encodeFullStatus(header, buildFullStatusGroups(status), output, error);
 }
 
+/**
+ * @brief 功能：把完整状态组消息还原为领域状态快照。
+ * @details 机制：先确认组集合完整，再逐组读取并转换字段、记录采样时间，全部成功后一次性提交 parsed 结果，避免输出半成品。
+ */
 inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPayload &status,
     std::string *error = nullptr)
 {
+    // 阶段一：确认输入包含完整组集合，并通过局部解析器统一记录采样时间。
     if (!isFullStatus(message.groups)) return detail::fail(error, "full status groups are incomplete");
     FullStatusPayload parsed;
 
@@ -994,6 +1068,7 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
         return parse(reader) && reader.remaining() == 0;
     };
 
+    // 阶段二：读取运行时、Beckhoff 和保留组。
     if (!parseGroup(GroupId::RobotRuntime, [&](detail::Reader &reader) {
             std::uint8_t lifecycle = 0;
             std::uint8_t mode = 0;
@@ -1031,6 +1106,7 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
                 && detail::allZero(reserved, 0, reserved.size());
         })) return detail::fail(error, "cannot parse reserved status group");
 
+    // 阶段三：读取 ERCP 状态、反馈和应用命令审计组。
     if (!parseGroup(GroupId::ErcpState, [&](detail::Reader &reader) {
             std::uint16_t reserved16 = 0;
             std::uint64_t reserved64 = 0;
@@ -1070,6 +1146,7 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
                 && detail::readAppliedCommand(reader, parsed.applied_command.last_successful_write);
         })) return detail::fail(error, "cannot parse applied command group");
 
+    // 阶段四：读取 ADS 诊断与扩展组，成功后一次性提交解析结果。
     if (!parseGroup(GroupId::AdsDiagnostics, [&](detail::Reader &reader) {
             std::uint8_t connection = 0;
             std::uint8_t reserved = 0;

@@ -7,6 +7,10 @@
 namespace ercp {
 namespace {
 
+/**
+ * @brief 按限频策略记录 Master 优先级覆盖 Cloud 命令的诊断信息。
+ * @details 控制周期可能连续触发覆盖；日志每 10 秒最多输出一次，避免周期线程被日志 I/O 拖慢。
+ */
 void LogMasterOverride(std::uint64_t override_count)
 {
     static auto last_log = std::chrono::steady_clock::now();
@@ -23,12 +27,17 @@ void LogMasterOverride(std::uint64_t override_count)
 
 } // namespace
 
+/**
+ * @brief 功能：执行一个机器人控制周期，选择控制源、应用安全门控并写入 Beckhoff。
+ * @details 机制：按“源仲裁—新鲜度/安全命令—PLC 映射—follow 与离散写入—应用结果审计”的固定顺序处理，失败结果进入状态快照。
+ */
 void YunSBot::_base::ControlRunnable2(double t)
 {
     (void)t;
     auto &robot = GetRobot();
     const bool automatic_mode = m_RobotAutoMode.load();
 
+    // 阶段一：先按 Master 优先策略仲裁控制源。
     // 1. Select the control source. A recent Master command overrides Cloud
     // control in automatic mode when the configured priority policy is enabled.
     constexpr double kMasterPriorityWindowSeconds = 0.2;
@@ -47,7 +56,7 @@ void YunSBot::_base::ControlRunnable2(double t)
         LogMasterOverride(overrides);
     }
 
-    // 2. Read the selected command and preserve metadata for the audit trail.
+    // 阶段二：读取选中的最新命令，并保留审计所需的来源、序号和时间戳。
     const bool use_master = source_decision.source == protocol::v3::Source::Master;
     auto &channel = use_master ? parent.master : parent.situaware;
     protocol::v3::ControlPayload command = robot_udp_v3::ZeroControl();
@@ -64,8 +73,7 @@ void YunSBot::_base::ControlRunnable2(double t)
     }
     m_command_fresh = fresh;
 
-    // 3. Apply the safety policy and map the semantic command to the two PLC
-    // command shapes. PLC layout details stay inside the policy module.
+    // 阶段三：应用安全策略，把领域命令映射为两种 PLC 写入布局。
     const auto prepared = control_cycle::PrepareCommands(command,
                                                           fresh,
                                                           robot.BeckhoffIsERCPOnline(),
@@ -73,14 +81,13 @@ void YunSBot::_base::ControlRunnable2(double t)
                                                           robot.BeckhoffSnapshot());
     const auto follow_command = control_cycle::ToFollowCommand(prepared.safe_control);
 
-    // 4. Perform the device writes once, keeping the first ADS error.
+    // 阶段四：执行一次 follow 写入和一次离散写入，并保留首个 ADS 错误。
     const auto applied_at = robot_udp_v3::UnixNowNs();
     const auto follow_error = robot.BeckhoffWriteFollowCommand(follow_command);
     const auto discrete_error = robot.BeckhoffGoldDiscreteCommandResult(prepared.discrete);
     const auto ads_error = control_cycle::FirstAdsError(follow_error, discrete_error);
 
-    // 5. Record exactly what reached the PLC adapter, after all safety gates
-    // and clamping, so status reporting remains an audit trail.
+    // 阶段五：记录经过安全门控和限幅后真正送到 PLC 适配器的命令。
     const auto applied_command =
         control_cycle::ToAppliedControl(follow_command, prepared.discrete);
     m_applied_commands.MarkAttempt(applied_command,

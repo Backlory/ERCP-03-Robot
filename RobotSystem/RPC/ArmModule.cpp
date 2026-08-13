@@ -60,6 +60,10 @@ bool ArmModule::StopFollow()
     return this->PostAsyncEvent(ex_trigger{});
 }
 
+/**
+ * @brief 功能：等待正在进行的状态转移结束，并把当前 Beckhoff 反馈同步到机械臂状态机。
+ * @details 机制：先等待转移锁释放，再在 500 ms 窗口内读取设备运动状态并映射为 A3/A4/A5 等领域状态。
+ */
 bool ArmModule::SynchronizeWithBeckhoffFeedback()
 {
     const auto feedback = GetRobot().BeckhoffArmMoveState();
@@ -134,6 +138,10 @@ bool ArmModule::IsConnected(state_t to)
     return FsmArm::IsConnected<ArmModule>(to);
 }
 
+/**
+ * @brief 功能：请求机械臂状态机异步转移到指定目标状态。
+ * @details 机制：检查当前状态与目标状态是否存在合法连接，存在时创建对应任务并提交给状态机。
+ */
 bool ArmModule::GotoState(state_t state)
 {
     // Reconcile stale RPC state with the physical Beckhoff feedback before
@@ -156,6 +164,10 @@ bool ArmModule::GotoState(state_t state)
     return false;
 }
 
+/**
+ * @brief 功能：处理状态转移异常，按错误类型尝试恢复或记录最终失败。
+ * @details 机制：提取异常并调用 error::solution；可恢复且重试次数未超限时重新提交任务，否则保留错误状态。
+ */
 bool ArmModule::OnError(const transition_error &error)
 {
     try {

@@ -39,6 +39,10 @@ CommandReceiver::CommandReceiver(protocol::Source expected_source)
 {
 }
 
+/**
+ * @brief 功能：将指定命令会话标记为已退休，拒绝其后续数据包。
+ * @details 机制：在接收器锁内更新退休会话集合并清理当前会话状态，防止旧发送端重新注入控制命令。
+ */
 void CommandReceiver::RetireSession(std::uint64_t session_id)
 {
     constexpr std::size_t kRetiredSessionLimit = 32;
@@ -64,6 +68,10 @@ bool CommandReceiver::AcceptDatagram(const std::uint8_t *data, std::size_t size,
     return Accept(data, size, error);
 }
 
+/**
+ * @brief 功能：验证并接收一份 Robot V3 控制 UDP 数据报。
+ * @details 机制：按长度、协议头、来源、session/sequence 顺序和控制载荷语义逐层校验，成功后更新最新命令与接收统计。
+ */
 bool CommandReceiver::Accept(const std::uint8_t *data, std::size_t size, std::string *error)
 {
     protocol::Header header;
@@ -132,6 +140,10 @@ bool CommandReceiver::Accept(const std::uint8_t *data, std::size_t size, std::st
     return true;
 }
 
+/**
+ * @brief 功能：在新鲜度窗口内读取当前会话的最新控制命令及元数据。
+ * @details 机制：锁内检查是否存在命令、会话是否退休、接收时间是否过期，成功时复制 payload 和审计元数据。
+ */
 bool CommandReceiver::TryGet(protocol::ControlPayload &payload,
                              CommandMetadata &metadata,
                              double max_age_seconds) const
@@ -171,6 +183,10 @@ ReceiveStats CommandReceiver::Stats() const
     return stats_;
 }
 
+/**
+ * @brief 功能：记录一次控制命令写入尝试，并在成功时更新最近成功记录。
+ * @details 机制：保存命令、来源、序号、ADS 错误和时间戳；latest 始终更新，last-successful 仅在写入成功时更新。
+ */
 void AppliedCommandTracker::MarkAttempt(const protocol::ControlPayload &command,
                                         const CommandMetadata &metadata,
                                         protocol::ApplyResult result,

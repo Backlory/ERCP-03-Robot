@@ -24,6 +24,10 @@ struct SymbolSpec {
     bool required = true;
 };
 
+/**
+ * @brief 按数组下标批量生成 PLC symbol 检查项。
+ * @details 使用统一的前缀、类型、字节长度和访问级别构造名称，减少探测清单中的重复文字。
+ */
 void AddIndexedSymbols(std::vector<SymbolSpec> &symbols,
                        const char *prefix,
                        const char *type,
@@ -38,6 +42,10 @@ void AddIndexedSymbols(std::vector<SymbolSpec> &symbols,
     }
 }
 
+/**
+ * @brief 构造 Beckhoff 接口探测所需的完整 symbol 清单。
+ * @details 清单同时覆盖必需字段、可选字段、只读字段和安全归零写字段，供主流程逐项查询和校验。
+ */
 std::vector<SymbolSpec> BuildSymbolSpecs()
 {
     std::vector<SymbolSpec> symbols{
@@ -169,6 +177,10 @@ std::string AdsHex(long error)
     return stream.str();
 }
 
+/**
+ * @brief 将常见 ADS 错误码转换为稳定的英文诊断名称。
+ * @details 覆盖连接、超时、尺寸、符号和权限错误；未登记的错误统一返回 UNKNOWN。
+ */
 const char *ErrorName(long error)
 {
     switch (error) {
@@ -195,6 +207,10 @@ const char *ErrorName(long error)
     }
 }
 
+/**
+ * @brief 将点分隔的六段 AMS Net ID 文本解析为字节数组。
+ * @details 严格检查段数、分隔符和 0~255 范围，只有完整合法时才写入目标地址。
+ */
 bool ParseNetId(const std::string &text, AmsNetId &net_id)
 {
     std::array<unsigned int, 6> parts{};
@@ -218,6 +234,10 @@ bool ParseNetId(const std::string &text, AmsNetId &net_id)
     return true;
 }
 
+/**
+ * @brief 解析接口探测工具的命令行选项。
+ * @details 支持目标 Net ID、ADS 端口和安全归零写开关，未知参数或非法端口直接返回失败。
+ */
 bool ParseOptions(int argc, char **argv, Options &options)
 {
     for (int i = 1; i < argc; ++i) {
@@ -245,6 +265,10 @@ struct OnlineSymbol {
     std::string type;
 };
 
+/**
+ * @brief 通过 ADS 按名称查询 PLC symbol 的在线地址、大小和类型。
+ * @details 发送 SYM_INFOBYNAMEEX 请求，校验返回长度后解码 AdsSymbolEntry，供后续读写使用。
+ */
 long QuerySymbol(AmsAddr &address, const char *name, OnlineSymbol &result)
 {
     std::array<std::uint8_t, 4096> buffer{};
@@ -271,6 +295,10 @@ long QuerySymbol(AmsAddr &address, const char *name, OnlineSymbol &result)
     return ADSERR_NOERR;
 }
 
+/**
+ * @brief 将读取到的字节缓冲区格式化为最多 16 字节的十六进制预览。
+ * @details 保持输出紧凑，超出预览范围时追加省略号，便于逐项探测结果人工核对。
+ */
 std::string Preview(const std::vector<std::uint8_t> &bytes)
 {
     std::ostringstream stream;
@@ -288,8 +316,13 @@ std::string Preview(const std::vector<std::uint8_t> &bytes)
 
 } // namespace
 
+/**
+ * @brief Beckhoff 接口探测工具入口。
+ * @details 依次解析参数、打开 ADS 端口、读取目标状态、逐项查询/读取 symbol，并按访问策略执行可选安全归零写入。
+ */
 int main(int argc, char **argv)
 {
+    // 阶段一：解析目标和本地 ADS 参数，建立目标地址并打开客户端端口。
     Options options;
     try {
         if (!ParseOptions(argc, argv, options)) {
@@ -326,6 +359,7 @@ int main(int argc, char **argv)
         return 4;
     }
 
+    // 阶段二：逐项核对 symbol 的在线类型和长度，必要时只写入预先声明的安全零值。
     std::size_t passed = 0;
     std::size_t failed = 0;
     std::size_t written = 0;
@@ -390,6 +424,7 @@ int main(int argc, char **argv)
         std::cout << " | " << Preview(bytes) << '\n';
     }
 
+    // 阶段三：关闭 ADS 端口并输出必需字段失败数，作为命令行退出码。
     AdsPortClose();
     std::cout << "\nSUMMARY total=" << kSymbols.size() << " pass=" << passed
               << " fail=" << failed << " safe_zero_writes=" << written << '\n';

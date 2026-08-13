@@ -23,8 +23,13 @@ namespace net {
 
     namespace helper {
 
+        /**
+         * @brief 功能：解析 IPv4 或 IPv4:port 文本。
+         * @details 机制：用正则提取地址和可选端口；无端口时返回 -1，格式不匹配时返回 false。
+         */
         static bool parse_ip(const std::string &source, std::string &addr, int &port)
         {
+            // 解析 IPv4 或 IPv4:port 文本；无端口时保留 -1，格式不匹配时不写入有效地址。
             port = -1;
             static const std::regex ip_regex("^((?:[0-9]{1,3}\\.){3}[0-9]{1,3})(?::([0-9]+))?$");
             std::smatch base_match;

@@ -89,6 +89,10 @@ Beckhoff_Motor::~Beckhoff_Motor()
 }
 
 // 打开链接
+/**
+ * @brief 功能：建立 Beckhoff ADS 连接，确认 PLC 可通信并启动状态轮询线程。
+ * @details 机制：先初始化目标地址和 direct/原生传输，再读取 PLC 状态、必要时切换到 RUN，最后探测 ERCP 可选符号并启动轮询。
+ */
 bool Beckhoff_Motor::OpenConn(string sIPAddr,
                               int iPort,
                               const string &transport,
@@ -185,6 +189,10 @@ bool Beckhoff_Motor::OpenConn(string sIPAddr,
 }
 
 // 关闭链接
+/**
+ * @brief 功能：停止 ADS 状态线程、释放符号句柄和关闭传输连接。
+ * @details 机制：先撤销打开标志并 join 轮询线程，再在 ADS 锁内关闭端口，最后把快照标记为断开和过期。
+ */
 bool Beckhoff_Motor::CloseConn()
 {
     m_bIsOpen.store(false, std::memory_order_release);
@@ -242,6 +250,10 @@ bool Beckhoff_Motor::FollowOperationData(unsigned long length, void *data)
     return FollowOperationDataResult(length, data) == ADSERR_NOERR;
 }
 
+/**
+ * @brief 功能：把 typed follow 命令拆成 PLC 需要的操作、回零和 IO 字段并写入 ADS。
+ * @details 机制：先校验结构体长度，再按固定 symbol 分组写入；通过 KeepFirstError 汇总首个失败码并更新命令写入诊断。
+ */
 std::uint32_t Beckhoff_Motor::FollowOperationDataResult(unsigned long length, const void *data)
 {
     if (length != sizeof(beckhoff_follow_cmd) || data == nullptr)
@@ -279,6 +291,10 @@ std::uint32_t Beckhoff_Motor::FollowOperationDataResult(unsigned long length, co
     return result;
 }
 
+/**
+ * @brief 功能：按变化检测将离散控制命令和 ERCP 扩展字段写入 PLC。
+ * @details 机制：先写机器人动作，再依据 ERCP 可用性和上一条命令只写变化字段；失败时清除缓存，迫使下一次完整重写。
+ */
 std::uint32_t
 Beckhoff_Motor::GoldDiscreteCommandResult(const device::beckhoff::GoldDiscreteCommand &command)
 {
@@ -373,8 +389,13 @@ bool Beckhoff_Motor::SetEndoscopyType(int iType)
     return WriteData("MAIN.type_of_scope", 4, &iType) == ADSERR_NOERR;
 }
 
+/**
+ * @brief 执行或解除机器人的急停状态。
+ * @details 解除急停前先取消折叠/展开中的旧动作，再把急停位写入 PLC，确保恢复过程不会继续执行过期命令。
+ */
 bool Beckhoff_Motor::EmergencyStop(bool bIsStop)
 {
+    // 急停解除时先取消折叠/展开中的动作，再把主急停位写入 PLC，避免恢复路径继续执行旧动作。
     if (!bIsStop) {
         // 非急停为恢�?原有的运动状态恢复为初始状�?
         const auto moveState = MoveState();
@@ -424,8 +445,13 @@ double Beckhoff_Motor::BigWhellCalc()
     return Snapshot().common_values[1];
 }
 
+/**
+ * @brief 查询指定 GPIO 输出在最新 Beckhoff 快照中的开关状态。
+ * @details 将 gas、water、suct 三种逻辑输出映射到快照中的固定 bit；未知输出统一返回关闭。
+ */
 bool Beckhoff_Motor::Output_Switch(gpio_output_t out_switch)
 {
+    // 从一致快照读取输出位，并把 gas/water/suction 映射为对应的 PLC bit。
     const auto switches = Snapshot().output_switches;
     if (gpio_output_t::gas == out_switch)
         return (switches & (1u << 1)) != 0;
@@ -553,6 +579,10 @@ std::uint32_t Beckhoff_Motor::AdsWrite(std::uint32_t indexGroup,
         AdsSyncWriteReq(&m_Addr, indexGroup, indexOffset, length, const_cast<void *>(data)));
 }
 
+/**
+ * @brief 功能：根据传输模式执行 ADS ReadWrite，并返回实际读取字节数。
+ * @details 机制：direct 模式委托 TCP 适配器；TwinCAT 模式调用原生 ADS API，再把两种实现的返回值统一起来。
+ */
 std::uint32_t Beckhoff_Motor::AdsReadWrite(std::uint32_t indexGroup,
                                            std::uint32_t indexOffset,
                                            std::uint32_t readLength,
@@ -585,6 +615,10 @@ std::uint32_t Beckhoff_Motor::AdsReadWrite(std::uint32_t indexGroup,
     return result;
 }
 
+/**
+ * @brief 功能：获取并缓存 PLC symbol 的句柄或稳定的“未找到”错误。
+ * @details 机制：先查成功/失败缓存，再按名称解析；旧 PLC 缺少可选叶字段时避免每轮重复查询。
+ */
 std::uint32_t Beckhoff_Motor::SymbolHandle(const char *paraName, unsigned long &handle)
 {
     const auto existing = m_symbol_handles.find(paraName);
@@ -614,6 +648,10 @@ std::uint32_t Beckhoff_Motor::SymbolHandle(const char *paraName, unsigned long &
     return result;
 }
 
+/**
+ * @brief 功能：批量读取 PLC symbol，并为每个请求记录独立错误码。
+ * @details 机制：先解析/缓存 symbol handle，优先执行 ADS Sum Read；PLC 不支持时永久降级为顺序读取，单项失败不影响其他成功字段。
+ */
 std::uint32_t Beckhoff_Motor::ReadDataBatch(const AdsReadRequest *requests,
                                             std::size_t count,
                                             std::uint32_t *itemErrors)
@@ -720,6 +758,10 @@ std::uint32_t Beckhoff_Motor::ReadDataBatch(const AdsReadRequest *requests,
 }
 
 // 读取数据
+/**
+ * @brief 功能：通过缓存的 symbol handle 读取单个 PLC 字段。
+ * @details 机制：串行保护 ADS 传输和句柄表；读失败时释放失效句柄，下一次读取会重新解析 symbol。
+ */
 std::uint32_t Beckhoff_Motor::ReadData(const char *paraName, unsigned long length, void *data)
 {
     if (!IsOpen())
@@ -740,6 +782,10 @@ std::uint32_t Beckhoff_Motor::ReadData(const char *paraName, unsigned long lengt
 }
 
 // 写入数据
+/**
+ * @brief 功能：通过缓存的 symbol handle 写入单个 PLC 字段。
+ * @details 机制：复用句柄解析和 ADS 锁；写失败时删除句柄缓存，避免后续继续使用失效引用。
+ */
 std::uint32_t
 Beckhoff_Motor::WriteData(const char *paraName, unsigned long length, const void *data)
 {
@@ -760,6 +806,10 @@ Beckhoff_Motor::WriteData(const char *paraName, unsigned long length, const void
     return result;
 }
 
+/**
+ * @brief 功能：释放当前连接创建的所有 PLC symbol 句柄并清空本地缓存。
+ * @details 机制：连接仍开放时逐项发送释放请求，随后无条件清除成功/失败缓存，供下一连接重新解析。
+ */
 void Beckhoff_Motor::ReleaseSymbolHandles()
 {
     std::lock_guard<std::mutex> lock(m_ads_mutex);
@@ -774,6 +824,10 @@ void Beckhoff_Motor::ReleaseSymbolHandles()
 }
 
 // 建立地址
+/**
+ * @brief 功能：把文本地址和端口转换为 Beckhoff AMS 目标地址。
+ * @details 机制：按点分隔字段填充 NetId；地址不完整时使用本机地址，端口为零时采用 ADS 默认端口 851。
+ */
 bool Beckhoff_Motor::BuildAddr(string sIP, int iPort, AmsAddr &bfAddr)
 {
     auto vIp = ilsr::split(sIP, ".");
@@ -799,6 +853,10 @@ bool Beckhoff_Motor::BuildAddr(string sIP, int iPort, AmsAddr &bfAddr)
     return true;
 }
 
+/**
+ * @brief 功能：按公共 PLC 字段读取计划构造 Beckhoff 通用状态快照。
+ * @details 机制：先集中登记固定 symbol 与目标内存，再批量读取并聚合每项错误，最后只提交成功字段并更新 valid/stale 诊断。
+ */
 void Beckhoff_Motor::PollCommonSnapshot(BeckhoffSnapshot &next,
                                         std::string &lastFailureDetails)
 {
@@ -883,6 +941,10 @@ void Beckhoff_Motor::PollCommonSnapshot(BeckhoffSnapshot &next,
     MarkSnapshotGroup(next, SnapshotCommon, 0, successfulItems != 0, UnixNowNs());
 }
 
+/**
+ * @brief 功能：读取 ERCP 在线、就绪、错误位、类型和运动状态并填充状态组。
+ * @details 机制：按固定请求索引映射每个字段，只有对应读取成功时才设置语义位，随后标记 ERCP 状态组的有效性。
+ */
 std::uint32_t Beckhoff_Motor::PollErcpState(BeckhoffSnapshot &next)
 {
     bool online = false;
@@ -938,6 +1000,10 @@ std::uint32_t Beckhoff_Motor::PollErcpState(BeckhoffSnapshot &next)
     return result;
 }
 
+/**
+ * @brief 功能：读取 ERCP 力、位置、注入状态和球囊压力反馈。
+ * @details 机制：一次批量提交 11 个叶字段，逐项按错误码选择真实值或安全零值，并更新 ERCP feedback 诊断组。
+ */
 std::uint32_t Beckhoff_Motor::PollErcpFeedback(BeckhoffSnapshot &next)
 {
     double deliverForce = 0;
@@ -983,6 +1049,10 @@ std::uint32_t Beckhoff_Motor::PollErcpFeedback(BeckhoffSnapshot &next)
     return result;
 }
 
+/**
+ * @brief 功能：管理 ERCP 可选字段的探测、轮询和连续失败降级。
+ * @details 机制：不可用时每秒探测一次；可用时同时读取状态/反馈，连续三轮失败后清除可选组并回到探测状态。
+ */
 void Beckhoff_Motor::PollErcpSnapshot(BeckhoffSnapshot &next,
                                       std::chrono::steady_clock::time_point cycleStarted,
                                       std::chrono::steady_clock::time_point &nextProbe)
@@ -1027,20 +1097,27 @@ void Beckhoff_Motor::PublishSnapshot(BeckhoffSnapshot next)
 
 // 状态轮询线程：按固定周期读取公共状态和 ERCP 状态，
 // 汇总 ADS 诊断信息后发布一致的 Beckhoff 快照。
+/**
+ * @brief 功能：以 20 ms 周期调度公共状态、ERCP 状态并发布一致快照。
+ * @details 机制：每轮复制上一快照并递增序号，按“读取—聚合诊断—发布—等待下一周期”顺序运行；线程中断用于生命周期退出。
+ */
 void Beckhoff_Motor::StateUpdateThread()
 {
     auto nextErcpProbe = std::chrono::steady_clock::now();
     std::string lastCommonFailureDetails;
 
     while (!boost::this_thread::interruption_requested()) {
+        // 阶段一：建立本轮快照基线和时间/序号元数据。
         const auto cycleStarted = std::chrono::steady_clock::now();
         BeckhoffSnapshot next = Snapshot();
         next.sequence += 1;
         next.poll_started_unix_ns = UnixNowNs();
         next.overall_ads_error = ADSERR_NOERR;
 
+        // 阶段二：读取公共字段，再按可选能力读取 ERCP 字段并汇总错误。
         PollCommonSnapshot(next, lastCommonFailureDetails);
         PollErcpSnapshot(next, cycleStarted, nextErcpProbe);
+        // 阶段三：一次性发布本轮快照，保持读侧看到的字段组相互对应。
         PublishSnapshot(next);
 
         std::this_thread::sleep_until(cycleStarted + std::chrono::milliseconds(20));

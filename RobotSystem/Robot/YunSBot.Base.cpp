@@ -28,6 +28,10 @@ YunSBot::YunSBot()
     rpc::ArmModule::GetInstance().Resume<rpc::ArmModule>();
 }
 
+/**
+ * @brief 初始化 RobotSystem 基类的控制通道、生命周期任务和周期回调。
+ * @details 建立状态发送/命令接收通道，登记启动、停止和错误相关事件，并读取 Master 优先仲裁配置。
+ */
 YunSBot::_base::_base(YunSBot &p)
     : m_status_session_id(robot_udp_v3::MakeSessionId())
     , parent(p)
@@ -89,6 +93,10 @@ YunSBot::_base::_base(YunSBot &p)
     work = boost::make_shared<boost::asio::io_service::work>(this->io_service);
 }
 
+/**
+ * @brief 功能：启动机器人后台周期线程和 Asio IO 线程。
+ * @details 机制：后台线程运行通用周期循环，IO 线程运行 io_service；两者异常分别记录，不改变既有调度周期。
+ */
 void YunSBot::_base::StartThreads()
 {
     m_bg_worker = boost::make_shared<boost::thread>(
@@ -104,6 +112,10 @@ void YunSBot::_base::StartThreads()
     });
 }
 
+/**
+ * @brief 功能：在机器人启动成功后创建控制周期线程。
+ * @details 机制：只在控制线程不存在时创建，避免重复启动；控制回调由统一周期循环驱动。
+ */
 void YunSBot::_base::StartControlThreads()
 {
     if (!m_ctrl_worker) {
@@ -112,6 +124,10 @@ void YunSBot::_base::StartControlThreads()
     }
 }
 
+/**
+ * @brief 功能：以固定周期执行一个 signals2 回调，直到线程被中断。
+ * @details 机制：记录周期起点、隔离回调异常、扣除执行耗时后休眠，并在每轮末检查中断点。
+ */
 void YunSBot::_base::RunPeriodicLoop(const char *threadName,
                                      double intervalSeconds,
                                      boost::signals2::signal<void(double)> &callback)
@@ -141,6 +157,10 @@ void YunSBot::_base::ExitControlThreads()
     }
 }
 
+/**
+ * @brief 关闭 RobotSystem 基类持有的 IO、后台线程和未完成生命周期任务。
+ * @details 先停止 Asio 工作，再中断后台线程；若机器人仍在运行则排队停止并等待其 future 完成。
+ */
 YunSBot::_base::~_base()
 
 {
@@ -158,6 +178,10 @@ YunSBot::_base::~_base()
     }
 }
 
+/**
+ * @brief 功能：启动异步机器人开机任务，并拒绝与上一生命周期任务重叠。
+ * @details 机制：先等待已有 future 完成，再创建 ExecuteStart 异步任务；调用方通过返回值知道任务是否已排入。
+ */
 bool YunSBot::_base::Start(size_t total)
 {
     if (!WaitForLifecycleTask())
@@ -178,6 +202,10 @@ bool YunSBot::_base::WaitForLifecycleTask()
     return true;
 }
 
+/**
+ * @brief 按指定次数执行开机任务序列并记录每次失败。
+ * @details 每次失败都输出任务错误并递减剩余次数，任意一次成功立即结束；耗尽次数后返回失败。
+ */
 bool YunSBot::_base::RunStartTasks(std::size_t totalAttempts)
 {
     std::size_t remainingAttempts = totalAttempts;
@@ -193,6 +221,10 @@ bool YunSBot::_base::RunStartTasks(std::size_t totalAttempts)
     return false;
 }
 
+/**
+ * @brief 功能：执行一次完整开机生命周期，包括前置事件、重试任务和成功/失败事件。
+ * @details 机制：先拒绝已运行状态，再设置 Starting、准备报告并执行任务；失败保持未启动，成功启动控制线程并清理旧关机报告。
+ */
 bool YunSBot::_base::ExecuteStart(std::size_t totalAttempts)
 {
     if (IsRobotRunning())
@@ -221,6 +253,10 @@ bool YunSBot::_base::ExecuteStart(std::size_t totalAttempts)
     return true;
 }
 
+/**
+ * @brief 功能：校验机械臂可关机条件并排入异步关机任务。
+ * @details 机制：折叠状态不满足时立即拒绝；其余情况等待已有任务后创建 ExecuteStop，实际停止流程由异步任务完成。
+ */
 bool YunSBot::_base::Stop()
 {
     // 需等到机械臂折叠后才能关机
@@ -236,6 +272,10 @@ bool YunSBot::_base::Stop()
     return true;
 }
 
+/**
+ * @brief 功能：执行关机任务、停止控制线程并发布生命周期结果。
+ * @details 机制：通过任务序列完成设备收拢，成功后切换未启动状态；失败保留启动状态并触发失败事件供控制线程恢复。
+ */
 bool YunSBot::_base::ExecuteStop()
 {
     if (!IsRobotRunning())
@@ -380,6 +420,10 @@ bool YunSBot::_base::SwitchAutoMode(bool enable)
     return true;
 }
 
+/**
+ * @brief 开启或关闭机器人运行日志文件。
+ * @details 在日志锁内按需创建带表头的 CSV logger 或释放现有 logger，返回最终是否处于记录状态。
+ */
 bool YunSBot::_base::SwitchLogger(bool enable)
 {
     std::lock_guard<decltype(m_log_mutex)> _(m_log_mutex);
@@ -396,6 +440,10 @@ bool YunSBot::_base::SwitchLogger(bool enable)
     return m_logger != nullptr;
 }
 
+/**
+ * @brief 将一次力和轴位置采样追加到运行日志。
+ * @details 仅在 logger 已启用时按固定 CSV 列顺序格式化数据，并在日志锁内写入一行。
+ */
 bool YunSBot::_base::AddFLog(double dF1,
                              double dF2,
                              double dF3,
@@ -437,6 +485,10 @@ bool YunSBot::_base::AddFRecord(double dFValue, double dPos)
 
 ///////////////////////////////////////////////////////////////////////////
 
+/**
+ * @brief 构造开机任务序列。
+ * @details 先初始化机械臂模块，再依据 Beckhoff 当前臂状态同步 ArmModule 状态机，供 Start 生命周期重试执行。
+ */
 void YunSBot::_base::InitStartingTask()
 {
     InitTasks = std::make_shared<SequentialTasks<>>(u8"开机");
@@ -475,6 +527,10 @@ void YunSBot::_base::InitStartingTask()
     ROBOT_INFO(true, "Robot starting list:\n" << InitTasks->dump());
 }
 
+/**
+ * @brief 构造关机任务序列。
+ * @details 注册机械臂模块反初始化和并行关闭任务，供 Stop 生命周期统一执行。
+ */
 void YunSBot::_base::InitClosingTask()
 {
     DeinitTasks = std::make_shared<SequentialTasks<>>(u8"关机");
@@ -498,6 +554,10 @@ void YunSBot::_base::InitClosingTask()
     //ROBOT_INFO(true, "Robot closing list:\n" << DeinitTasks->dump());
 }
 
+/**
+ * @brief 注册后台状态发布和控制周期回调。
+ * @details 后台回调按约 20 ms 发布新状态包；控制回调连接到固定周期的 ControlRunnable2。
+ */
 void YunSBot::_base::InitBackgroundTask()
 {
     OnBackground.connect([this](double t) {
@@ -537,8 +597,13 @@ std::uint64_t YunSBot::_base::LifecycleChangedUnixNs() const
     return m_lifecycle_changed_unix_ns.load();
 }
 
+/**
+ * @brief 功能：从当前生命周期、Beckhoff 快照和命令审计记录构造 Robot V3 状态包。
+ * @details 机制：先复制稳定状态快照并映射枚举/位域，再填充采样时间、ADS 诊断和扩展组，最后通过共享编码器生成 wire 包。
+ */
 protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
 {
+    // 阶段一：读取最新 Beckhoff 快照，只对新的、有效的 common 采样生成状态包。
     const auto snapshot = GetRobot().BeckhoffSnapshot();
     const auto common_sample_unix_ns = snapshot.sampled_at_unix_ns[0];
     const bool has_fresh_common_sample =
@@ -549,6 +614,7 @@ protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
         return {};
     }
 
+    // 阶段二：把生命周期、Beckhoff、ERCP 和应用命令审计信息映射到协议载荷。
     const auto now = robot_udp_v3::UnixNowNs();
     protocol::v3::FullStatusPayload status;
 
@@ -620,6 +686,7 @@ protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
     status.ads_diagnostics.command_write_ads_error =
         applied_commands.latest_write_attempt.ads_error;
 
+    // 阶段三：清理非有限数值，并把对应状态组标记为过期，避免 NaN 进入 wire 数据。
     for (double &value : status.beckhoff_common.values) {
         if (!std::isfinite(value)) {
             value = 0;
@@ -641,6 +708,7 @@ protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
         }
     }
 
+    // 阶段四：填充采样时间和 V3 头，编码成功后才推进“已发送采样”标记。
     status.sampled_at_unix_ns = {now,
                                  snapshot.sampled_at_unix_ns[0],
                                  snapshot.sampled_at_unix_ns[1],

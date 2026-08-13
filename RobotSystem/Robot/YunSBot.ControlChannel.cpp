@@ -8,6 +8,10 @@
 
 namespace ercp {
 
+/**
+ * @brief 初始化一个 Robot V3 控制通道的状态发送端和命令接收端。
+ * @details 根据 loopback 配置建立状态目标、设置对端过滤规则，并绑定控制 UDP 服务及统计初始时间。
+ */
 YunSBot::_control_channel::_control_channel(YunSBot &p,
                                             protocol::v3::Source channel_source,
                                             std::string remote_address,
@@ -43,6 +47,10 @@ YunSBot::_control_channel::_control_channel(YunSBot &p,
                fmt::format("Robot V3 control bind {}", server->address().toString()))
 }
 
+/**
+ * @brief 功能：接收控制通道 UDP 数据并交给 Robot V3 命令解析器。
+ * @details 机制：先按配置过滤对端地址，再把字节缓冲交给 CommandReceiver；解析结果和统计由接收器统一维护。
+ */
 void YunSBot::_control_channel::processData(char *buf)
 {
     // M4: drop datagrams whose source IP differs from the configured peer
@@ -104,6 +112,10 @@ bool YunSBot::_control_channel::IsOnline(double overtime) const
     return receiver.IsOnline(overtime);
 }
 
+/**
+ * @brief 功能：从控制通道读取仍在有效窗口内的最新命令。
+ * @details 机制：转发到线程安全接收器，调用方同时获得命令元数据用于源仲裁和应用审计。
+ */
 bool YunSBot::_control_channel::GetCommand(protocol::v3::ControlPayload &command,
                                            robot_udp_v3::CommandMetadata &metadata,
                                            double overtime) const

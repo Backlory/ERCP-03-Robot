@@ -89,8 +89,13 @@ ROBOT_API_MEMBER bool solution(const motor::command_error &e)
     return true;
 }
 
+/**
+ * @brief 给电机运动错误选择恢复策略。
+ * @details 当前策略将其标记为可重试；实际的重新使能流程保留在注释代码对应的扩展位置。
+ */
 ROBOT_API_MEMBER bool solution(const motor::motion_error &e)
 {
+    // 当前实现把运动错误视为可重试；保留电机重新使能流程的位置，避免把错误直接升级为致命故障。
     // auto &robot = _RobotDevice::GetInstance();
     // auto &motor = robot.GetMotor(e.m_id);
 
@@ -111,8 +116,13 @@ ROBOT_API_MEMBER bool solution(const motor::motion_error &e)
     return true;
 }
 
+/**
+ * @brief 根据动作任务报告中的具体异常选择恢复策略。
+ * @details 找到首个失败任务后重新抛出其异常，并按异常类型分派到对应的 solution 重载。
+ */
 ROBOT_API_MEMBER bool solution(const action::action_error &e)
 {
+    // 遍历动作任务报告，提取第一个异常并委托到具体错误类型的恢复策略。
     auto &rep = e.m_report;
     for (auto ite = rep.begin(); ite != rep.end(); ++ite) {
         if (ite->second == task::task_status::errored) {
@@ -142,6 +152,7 @@ ROBOT_API_MEMBER bool solution(const action::action_error &e)
 
 ROBOT_API_MEMBER bool solution(const std::exception &e)
 {
+    // 未分类的标准异常没有安全恢复策略，交给上层生命周期处理。
     // Not defined error.
     return false;
 }

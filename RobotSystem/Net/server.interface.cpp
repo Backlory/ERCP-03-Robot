@@ -141,6 +141,10 @@ std::vector<std::string> get_module_actions()
     return actions;
 }
 
+/**
+ * @brief 功能：把 HTTP module/action 请求映射为机械臂模块的状态转移或自动模式切换。
+ * @details 机制：先按模块类型选择 ArmModule，再按 action 分派到暂停、恢复、救援、目标状态和跟随控制接口。
+ */
 bool do_module_action(std::string type, std::string act)
 {
     if (type == "arm") {

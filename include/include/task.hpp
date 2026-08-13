@@ -71,8 +71,13 @@ public:
 
     virtual bool is_busy() const { return m_running; }
 
+    /**
+     * @brief 功能：执行单个任务回调并更新任务报告。
+     * @details 机制：处理可跳过状态，标记 running，捕获回调异常并转换为 passed/failed/errored，最后清除运行标志。
+     */
     virtual bool run(report_t &ret, Args... args)
     {
+        // 阶段一：标记运行并处理可跳过的已完成任务。
         m_running = true;
         // Skip finished task.
         if (m_skipable) {
@@ -85,7 +90,7 @@ public:
         if (ret.find(m_name) == ret.end()) {
             ret.emplace(m_name, ideal);
         }
-        // Run the task.
+        // 阶段二：执行任务回调，把结果映射为 passed/failed/errored 并收尾运行标志。
         bool res = false;
         ret.at(m_name) = running;
         try {
@@ -216,6 +221,10 @@ public:
         }
     }
 
+    /**
+     * @brief 功能：查询任务树中第一个可见的异常。
+     * @details 机制：先检查组合任务自身，再按声明顺序向子任务查找，便于报告保留稳定的错误来源。
+     */
     const std::exception_ptr get_error() const override
     {
         auto err = _TaskBase<Args...>::get_error();
@@ -243,8 +252,13 @@ public:
     {
     }
 
+    /**
+     * @brief 功能：按顺序执行组合任务中的全部子任务。
+     * @details 机制：每次先更新当前子任务指针，再执行下一项；任一项失败立即返回，全部成功才返回 true。
+     */
     bool run(report_t &ret, Args... args) override
     {
+        // 按声明顺序执行子任务；第一个失败立即停止后续步骤，并记录当前任务供外部观察。
         for (auto &task : base_t::m_tasks) {
             {
                 std::lock_guard<decltype(m_mutex)> lock(m_mutex);
@@ -286,8 +300,13 @@ public:
     {
     }
 
+    /**
+     * @brief 功能：并发执行组合任务中的全部子任务并汇总结果。
+     * @details 机制：为每个子任务创建异步 future，等待全部完成后用逻辑与合并成功状态。
+     */
     bool run(report_t &ret, Args... args) override
     {
+        // 并发启动所有子任务，再等待每个 future；整体结果只有在所有子任务成功时才为 true。
         bool global = true;
         std::vector<std::future<bool>> promices;
         // Creat async tasks

@@ -135,13 +135,12 @@ public:
 
 protected:
     /**
-         * @brief Costom-end post event to FSM, which will cause the transition.
-         * @tparam Event
-         * @param event
-         * @return State New state of the transistion.
-         */
+     * @brief 功能：向状态机投递事件并执行匹配的状态转换。
+     * @details 机制：持有状态机锁，按事件类型筛选转换表，再按当前状态和 guard 递归查找 action；未匹配时保持原状态。
+     */
     template <typename Object, typename Event> State post_event(const Event &event)
     {
+        // 阶段一：锁住状态机并按事件类型筛选 transition_table。
         processing_lock lock(*this);
         // Assert this class is derived from fsm.
         static_assert(std::is_base_of<fsm, Object>::value, "Must derive from fsm.");
@@ -149,17 +148,15 @@ protected:
         using items = typename do_transition_filter< //
             Event,
             typename Object::transition_table>::type;
-        // Do action on the event.
+        // 阶段二：执行首个满足当前状态和 guard 的转换，并返回目标状态。
         Object &self = static_cast<Object &>(*this);
         return do_transition<Object, Event, items>::execute(self, event, m_state);
     }
 
     /**
-         * @brief Costom-end post event to FSM, which will cause the transition.
-         * @tparam Event
-         * @param event
-         * @return State New state of the transistion.
-         */
+     * @brief 功能：检查当前状态机是否存在到目标状态的直接转换。
+     * @details 机制：只遍历编译期转换表，不执行 action 或修改当前状态，供生命周期和测试代码查询拓扑。
+     */
     template <typename Object> bool test_connection(State to)
     {
         // Assert this class is derived from fsm.
@@ -363,8 +360,13 @@ protected:
 
     template <typename Object, typename Event, typename Item0, typename... Items>
     struct do_transition<Object, Event, detail::_transition_table<Item0, Items...>> {
+        /**
+         * @brief 功能：在转换表中递归查找并执行当前事件的首个匹配项。
+         * @details 机制：先比较源状态并调用 guard；匹配时执行 action 并返回目标状态，否则继续递归剩余表项。
+         */
         static State execute(Object &self, const Event &event, State state)
         {
+            // 递归按表项查找匹配的源状态；guard 通过才执行 action，否则继续检查剩余表项。
             using _Complement = typename detail::_transition_table<Items...>;
             if (state == Item0::from_state() && Item0::do_guard(self, event)) {
                 /* Do current event if start state is same and guard succeed. */

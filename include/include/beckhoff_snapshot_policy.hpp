@@ -24,6 +24,14 @@ inline void MarkSnapshotGroup(BeckhoffSnapshot &snapshot,
     }
 }
 
+/**
+ * @brief 功能：清空不可用的 ERCP 可选状态组及其诊断标志。
+ * @details 机制：重置 ERCP 字段、有效/过期位和采样时间，不影响公共 Beckhoff 状态组。
+ */
+/**
+ * @brief 功能：清空不可用的 ERCP 可选状态组及其诊断标志。
+ * @details 机制：重置 ERCP 字段、有效/过期位和采样时间，不影响公共 Beckhoff 状态组。
+ */
 inline void ClearOptionalErcpGroups(BeckhoffSnapshot &snapshot)
 {
     constexpr auto groups =
@@ -39,6 +47,10 @@ inline void ClearOptionalErcpGroups(BeckhoffSnapshot &snapshot)
     snapshot.sampled_at_unix_ns[3] = 0;
 }
 
+/**
+ * @brief 功能：完成一次 Beckhoff 轮询的时间戳和连接质量收尾。
+ * @details 机制：无 ADS 错误时清零连续失败计数并标记 Running；有错误时饱和递增计数并标记 Degraded。
+ */
 inline void FinalizeSnapshotPoll(BeckhoffSnapshot &snapshot,
                                  std::uint64_t completed_at_unix_ns)
 {

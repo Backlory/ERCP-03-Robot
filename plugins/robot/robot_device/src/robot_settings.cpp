@@ -63,6 +63,10 @@ SettingManager::SettingManager()
     LoadSettings();
 }
 
+/**
+ * @brief 功能：从 config.yaml 读取设置并转换为类型化 Settings 对象。
+ * @details 机制：按需跳过已加载配置，解析失败返回 -1 并记录错误，避免错误配置静默回落为默认值。
+ */
 int SettingManager::LoadSettings(bool reload)
 {
     if (!reload && is_loaded > 0) {
@@ -88,6 +92,10 @@ int SettingManager::LoadSettings(bool reload)
     return is_loaded;
 }
 
+/**
+ * @brief 功能：返回当前设置的 YAML 源数据副本。
+ * @details 机制：重新执行解析以补齐默认键；只有解析成功才返回有效节点，否则返回空节点。
+ */
 YAML::Node SettingManager::GetSource()
 {
     YAML::Node config;
@@ -97,6 +105,10 @@ YAML::Node SettingManager::GetSource()
     return YAML::Node();
 }
 
+/**
+ * @brief 功能：用新的 YAML 配置更新内存设置并持久化到配置文件。
+ * @details 机制：先通过统一 Parse 校验和填充默认值，再仅在解析成功时写回文件。
+ */
 bool SettingManager::UpdateSource(YAML::Node config)
 {
     YAML::Node set;
@@ -104,8 +116,13 @@ bool SettingManager::UpdateSource(YAML::Node config)
     return is_loaded > 0 && SaveSettings();
 }
 
+/**
+ * @brief 功能：解析 YAML 配置，补齐缺省节点并同步到类型化 Settings 字段。
+ * @details 机制：宏只负责声明命名空间/字段访问，实际流程按 basic、device/beckhoff 的固定顺序执行；任一类型转换异常都会清空输出并返回失败。
+ */
 int SettingManager::Parse(YAML::Node &config, const YAML::Node &input)
 {
+    // 阶段一：以输入为基线，后续按配置域逐项读取或写入默认值。
     config = input;
     //---------------------------------------------------------------------
 #define BEGIN_NS(ns)                                                                               \
@@ -155,6 +172,7 @@ int SettingManager::Parse(YAML::Node &config, const YAML::Node &input)
     }
     //---------------------------------------------------------------------
 
+    // 阶段二：执行基础运行参数和 Beckhoff 连接参数的类型化映射。
     try {
         // clang-format off
             BEGIN_NS("basic")
@@ -188,6 +206,10 @@ int SettingManager::Parse(YAML::Node &config, const YAML::Node &input)
     return 1;
 }
 
+/**
+ * @brief 功能：将当前类型化设置重新生成 YAML 并保存到 config.yaml。
+ * @details 机制：先调用 Parse 生成包含默认值的完整配置，解析成功后覆盖写入文件。
+ */
 bool SettingManager::SaveSettings()
 {
     YAML::Node config;
@@ -218,8 +240,13 @@ ROBOT_API void SaveSettings()
     SettingManager::Get().SaveSettings();
 }
 
+/**
+ * @brief 解析 IPv4 或 IPv4:端口形式的配置文本。
+ * @details 地址部分始终写回 addr；只有文本包含端口时才更新 port，格式不匹配或端口为空则返回 false。
+ */
 ROBOT_API bool ParseIPAddress(const std::string &source, std::string &addr, size_t &port)
 {
+    // 解析 IPv4 或 IPv4:port 配置文本；不带端口时只更新地址，格式错误返回 false。
     static const std::regex ip_regex("^((?:[0-9]{1,3}\\.){3}[0-9]{1,3})(?::([0-9]+))?$");
     std::smatch base_match;
     if (std::regex_match(source, base_match, ip_regex)) {
@@ -251,8 +278,13 @@ ROBOT_API_MEMBER YAML::Node GetSettingConfig()
 
 //-----------------------------------------------------------------------------
 
+/**
+ * @brief 构造配置项的属性元数据树。
+ * @details 集中登记命名空间、字段类型、默认值、取值范围和中文说明，供配置查询/编辑接口展示。
+ */
 void make_prop_info()
 {
+    // 构造配置元数据树，向 HTTP/UI 提供字段类型、默认值和中文说明；不读取运行时配置文件。
 
     // clang-format off
     {

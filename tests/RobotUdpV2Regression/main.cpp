@@ -40,6 +40,10 @@ protocol::ControlPayload SampleControl()
     return payload;
 }
 
+/**
+ * @brief 使用固定头字段和给定控制载荷生成一帧 Robot V3 控制包。
+ * @details 测试只通过公开编码器生成字节，失败时复用统一 Expect 记录，避免手工拼接破坏 wire 回归意义。
+ */
 protocol::Bytes ControlPacket(protocol::Source source,
                               std::uint64_t session,
                               std::uint64_t sequence,
@@ -58,6 +62,10 @@ protocol::Bytes ControlPacket(protocol::Source source,
     return bytes;
 }
 
+/**
+ * @brief 验证 Beckhoff 叶字段到本地状态快照的逐项映射和局部失败隔离。
+ * @details 先覆盖全部成功值，再模拟旧 PLC 缺少单个 BOOL、力传感器和轴字段，确认可用字段不会被连带清除。
+ */
 void TestBeckhoffFeedbackLeaves()
 {
     device::beckhoff::RobotFeedbackLeaves feedback{};
@@ -109,6 +117,10 @@ void TestBeckhoffFeedbackLeaves()
            "available and unavailable axis leaves are kept separate");
 }
 
+/**
+ * @brief 验证 Robot V3 控制包的编码、解码、固定字节和非法输入拒绝行为。
+ * @details 同时覆盖 magic/version/size/source/reserved 校验以及 NaN、无穷和越界注入参数。
+ */
 void TestCodec()
 {
     const auto payload = SampleControl();
@@ -180,6 +192,10 @@ void TestCodec()
            "inject position below zero rejected");
 }
 
+/**
+ * @brief 验证 Robot V3 完整状态包的固定长度、分组往返和枚举原始值保留。
+ * @details 构造代表性运行、Beckhoff、ERCP、应用命令和 ADS 诊断数据，并检查未知标志被拒绝。
+ */
 void TestFullStatus()
 {
     protocol::FullStatusPayload status;
@@ -245,6 +261,10 @@ void TestFullStatus()
            "unregistered PLC enum values preserve their fixed-width raw representation");
 }
 
+/**
+ * @brief 验证命令接收器对序列号、重复包、乱序包和会话重启的分类规则。
+ * @details 还覆盖有限退休会话历史，确保旧会话不能重新抢占当前控制通道。
+ */
 void TestSequenceAndSessions()
 {
     runtime::CommandReceiver receiver(protocol::Source::Master);
@@ -285,6 +305,10 @@ void TestSequenceAndSessions()
            "retired packet does not change active session");
 }
 
+/**
+ * @brief 验证 V2 兼容入口、非法 datagram 拒绝以及命令新鲜度窗口。
+ * @details 先确认旧 native-layout 不被误接受，再确认 V2 控制包可用且过期/畸形包会更新统计。
+ */
 void TestV2OnlyAndFreshness()
 {
     runtime::CommandReceiver receiver(protocol::Source::Cloud);
@@ -316,6 +340,10 @@ void TestV2OnlyAndFreshness()
            "unsupported datagram is counted");
 }
 
+/**
+ * @brief 验证应用命令审计器对成功、失败和超时归零结果的保存策略。
+ * @details 最新尝试始终可见，失败尝试不覆盖最近成功记录，成功的安全归零保留 TimedOutToZero 语义。
+ */
 void TestAppliedCommandTracking()
 {
     runtime::AppliedCommandTracker tracker;
@@ -368,6 +396,10 @@ void TestControlSourceSelection()
            "automatic mode selects the Cloud 31004 command source");
 }
 
+/**
+ * @brief 验证控制源仲裁、安全门控、PLC 映射和 ADS 结果分类策略。
+ * @details 覆盖 Master 优先窗口、ERCP ready 门控、注射器完成保护、连续量限幅和应用命令审计。
+ */
 void TestControlCyclePolicy()
 {
     using ercp::control_cycle::ChooseSource;
@@ -425,6 +457,10 @@ void TestControlCyclePolicy()
            "ADS failure takes precedence over fresh and timeout classifications");
 }
 
+/**
+ * @brief 验证 Beckhoff 状态组的有效/过期标志、可选 ERCP 清理和轮询诊断更新。
+ * @details 分别模拟局部成功、完整失败、可选设备不可用以及成功/失败轮询收尾。
+ */
 void TestBeckhoffSnapshotPolicy()
 {
     device::beckhoff::BeckhoffSnapshot snapshot;
@@ -488,6 +524,10 @@ double PF(std::size_t offset)
 
 // 读取 golden hex fixture(大写连续十六进制文本, 忽略空白)。
 // 依次探测: ERCP_GOLDEN_DIR 环境变量、若干相对候选路径(测试目录 golden 副本)。
+/**
+ * @brief 从环境变量或相对候选目录加载十六进制 golden fixture。
+ * @details 依次尝试约定路径，忽略空白并把连续十六进制字符转换为字节；找不到或半字节尾部时返回已读结果/空路径。
+ */
 protocol::Bytes LoadGoldenHex(const std::string &name, std::string &usedPath)
 {
     std::vector<std::string> candidates;
@@ -552,6 +592,10 @@ protocol::Header GoldenControlHeader()
     return header;
 }
 
+/**
+ * @brief 构造控制 golden fixture 使用的固定协议载荷。
+ * @details 为连续量、开关、ERCP 六维手柄、注射参数和动作编号填入稳定值，保证跨语言字节回归可重复。
+ */
 protocol::ControlPayload GoldenControlPayload()
 {
     protocol::ControlPayload payload;
@@ -580,6 +624,10 @@ protocol::Header GoldenStatusHeader()
     return header;
 }
 
+/**
+ * @brief 构造完整状态 golden fixture 的固定分组数据。
+ * @details 覆盖运行态、Beckhoff/ERCP 状态与反馈、应用命令审计、ADS 诊断和采样时间字段。
+ */
 protocol::FullStatusPayload GoldenStatusPayload()
 {
     protocol::FullStatusPayload s;
@@ -655,6 +703,10 @@ protocol::FullStatusPayload GoldenStatusPayload()
     return s;
 }
 
+/**
+ * @brief 比较实际编码字节与 golden 字节并报告首个差异。
+ * @details 先检查长度，再按偏移比较内容，错误输出只保留第一个不一致位置以便快速定位协议变化。
+ */
 void ExpectBytesEqual(const protocol::Bytes &actual,
                       const protocol::Bytes &golden,
                       const char *what)
@@ -676,6 +728,10 @@ void ExpectBytesEqual(const protocol::Bytes &actual,
     }
 }
 
+/**
+ * @brief 执行控制包 224 字节 golden fixture 的编码和解码回归。
+ * @details 验证固定输入生成的字节完全一致，并检查从 fixture 解码出的头字段和连续控制量。
+ */
 void TestGoldenControlFixture()
 {
     std::string path;
@@ -707,6 +763,10 @@ void TestGoldenControlFixture()
     Expect(valuesMatch, "golden control payload fields match the fixed input");
 }
 
+/**
+ * @brief 执行完整状态包 1200 字节 golden fixture 的编码和解码回归。
+ * @details 比较所有主要业务分组、应用命令审计、ADS 诊断和采样时间，确保协议布局未漂移。
+ */
 void TestGoldenStatusFixture()
 {
     std::string path;
@@ -802,6 +862,10 @@ void TestGoldenStatusFixture()
 
 } // namespace
 
+/**
+ * @brief Robot UDP V3 回归测试入口。
+ * @details 依次运行叶字段映射、编解码、接收器策略、安全策略和 golden 字节测试，统一汇总失败数。
+ */
 int main()
 {
     static_assert(protocol::kRobotUdpV2SyncVersion == protocol::kRobotUdpV3SyncVersion,

@@ -45,8 +45,13 @@ std::uint32_t ReadU32(const std::uint8_t *data)
            static_cast<std::uint32_t>(data[2]) << 16 | static_cast<std::uint32_t>(data[3]) << 24;
 }
 
+/**
+ * @brief 通过 TCP 发送完整缓冲区，处理一次 send 只发送部分数据的情况。
+ * @details 循环推进数据指针直到全部发送；遇到 socket 错误或零字节发送立即报告失败。
+ */
 bool SendAll(SOCKET socket, const std::uint8_t *data, std::size_t size)
 {
+    // 循环处理 partial send，直到整帧写完或 socket 返回错误。
     while (size != 0) {
         const auto chunk = static_cast<int>(
             (std::min)(size, static_cast<std::size_t>((std::numeric_limits<int>::max)())));
@@ -59,8 +64,13 @@ bool SendAll(SOCKET socket, const std::uint8_t *data, std::size_t size)
     return true;
 }
 
+/**
+ * @brief 通过 TCP 接收指定长度的完整缓冲区。
+ * @details 循环累积 partial recv 结果，只有收齐目标长度才成功；连接关闭或出错时返回失败。
+ */
 bool ReceiveAll(SOCKET socket, std::uint8_t *data, std::size_t size)
 {
+    // 循环处理 partial recv，只有收齐指定字节数才返回成功。
     while (size != 0) {
         const auto chunk = static_cast<int>(
             (std::min)(size, static_cast<std::size_t>((std::numeric_limits<int>::max)())));
@@ -81,6 +91,10 @@ struct DirectAdsTransport::Impl {
     AmsAddr target{};
     std::uint32_t invokeId = 0;
 
+    /**
+     * @brief 功能：通过 TCP 发送一帧 AMS/ADS 请求并接收匹配的响应负载。
+     * @details 机制：分配 invoke id，组装 AMS/TCP 头，完整发送与接收后校验 command、invoke、长度和 ADS 错误码。
+     */
     std::uint32_t Exchange(std::uint16_t command,
                            const std::vector<std::uint8_t> &request,
                            std::vector<std::uint8_t> &response)
@@ -157,6 +171,10 @@ DirectAdsTransport::~DirectAdsTransport()
     Close();
 }
 
+/**
+ * @brief 功能：初始化 Winsock、建立到 ADS 网关的 TCP 连接并配置超时。
+ * @details 机制：先关闭旧连接，再创建 TCP socket、启用 TCP_NODELAY 与收发超时，最后保存目标 AMS 地址并重置 invoke 序号。
+ */
 bool DirectAdsTransport::Connect(const std::string &host,
                                  std::uint16_t tcpPort,
                                  const AmsAddr &target)
@@ -219,6 +237,10 @@ bool DirectAdsTransport::IsConnected() const
     return impl_->socket != INVALID_SOCKET;
 }
 
+/**
+ * @brief 功能：读取 ADS 状态和设备状态。
+ * @details 机制：发送无负载 ReadState 请求，校验至少 8 字节响应后提取结果码及两个状态字段。
+ */
 std::uint32_t DirectAdsTransport::ReadState(std::uint16_t &adsState, std::uint16_t &deviceState)
 {
     std::vector<std::uint8_t> response;
@@ -235,6 +257,10 @@ std::uint32_t DirectAdsTransport::ReadState(std::uint16_t &adsState, std::uint16
     return result;
 }
 
+/**
+ * @brief 功能：写入 ADS 状态控制命令及可选控制数据。
+ * @details 机制：校验指针与长度，按小端线序构造请求，经 Exchange 后读取响应结果码。
+ */
 std::uint32_t DirectAdsTransport::WriteControl(std::uint16_t adsState,
                                                std::uint16_t deviceState,
                                                std::uint32_t length,
@@ -257,6 +283,10 @@ std::uint32_t DirectAdsTransport::WriteControl(std::uint16_t adsState,
     return response.size() >= 4 ? ReadU32(response.data()) : ADSERR_CLIENT_SYNCRESINVALID;
 }
 
+/**
+ * @brief 功能：按 index group/offset 从 ADS 读取指定长度数据。
+ * @details 机制：发送读取请求，校验返回字节数不超过期望长度，再把有效负载复制到调用方缓冲区。
+ */
 std::uint32_t DirectAdsTransport::Read(std::uint32_t indexGroup,
                                        std::uint32_t indexOffset,
                                        std::uint32_t length,
@@ -285,6 +315,10 @@ std::uint32_t DirectAdsTransport::Read(std::uint32_t indexGroup,
     return result;
 }
 
+/**
+ * @brief 功能：按 index group/offset 向 ADS 写入指定长度数据。
+ * @details 机制：校验写入指针，拼装固定头和数据负载，经 Exchange 后返回设备结果码。
+ */
 std::uint32_t DirectAdsTransport::Write(std::uint32_t indexGroup,
                                         std::uint32_t indexOffset,
                                         std::uint32_t length,
@@ -307,6 +341,10 @@ std::uint32_t DirectAdsTransport::Write(std::uint32_t indexGroup,
     return response.size() >= 4 ? ReadU32(response.data()) : ADSERR_CLIENT_SYNCRESINVALID;
 }
 
+/**
+ * @brief 功能：执行 ADS ReadWrite 请求，同时写入请求数据并读取响应数据。
+ * @details 机制：校验读写缓冲区，构造四个长度字段和写负载，校验返回实际长度后复制读取结果。
+ */
 std::uint32_t DirectAdsTransport::ReadWrite(std::uint32_t indexGroup,
                                             std::uint32_t indexOffset,
                                             std::uint32_t readLength,

@@ -20,6 +20,10 @@ namespace ercp {
 
 namespace rpc {
 
+/**
+ * @brief 将机械臂状态枚举转换为可读的流程名称。
+ * @details 已登记状态返回稳定名称，未知枚举保留其整数值，便于日志和 HTTP 状态接口诊断。
+ */
 std::string rpc::GetProcessName(arm_state_t to)
 {
     // clang-format off
@@ -38,6 +42,10 @@ std::string rpc::GetProcessName(arm_state_t to)
     }
 }
 
+/**
+ * @brief 功能：为机械臂状态机生成从当前状态到目标状态的可执行任务。
+ * @details 机制：根据起止状态选择 Beckhoff 动作、等待反馈并在失败时抛出任务异常，交由状态机统一处理重试和救援。
+ */
 std::function<void()> ArmModule::MakeTask(const state_t &from, const state_t &to)
 {
     task::tasks_ptr<> ptr = nullptr;
@@ -90,6 +98,10 @@ std::function<void()> ArmModule::MakeTask(const state_t &from, const state_t &to
     return FsmArm::MakeTask(ptr);
 }
 
+/**
+ * @brief 功能：构造一个等待 Beckhoff 机械臂到达打开/折叠目标状态的顺序任务。
+ * @details 机制：先发起动作，再以固定间隔轮询反馈，超过 30 秒抛出超时错误，成功时返回完成的任务序列。
+ */
 task::seque_ptr<> ArmModule::MoveBeckhoffTo(std::string name, const bool bIsOpen)
 {
     int verbose = ercp::GetSettings().Basic.Verbose();

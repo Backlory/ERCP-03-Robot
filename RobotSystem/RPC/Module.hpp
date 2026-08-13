@@ -57,7 +57,11 @@ enum class module_state {
     S_Suspending = 2,
 };
 
-static std::string do_report(const task::tasks_ptr<> &task, const task::report_t &rep)
+    /**
+         * @brief 功能：把任务报告和异常信息格式化为可读的状态字符串。
+         * @details 机制：按任务步骤输出返回码，若任务带异常则重新抛出以提取错误文本。
+         */
+    static std::string do_report(const task::tasks_ptr<> &task, const task::report_t &rep)
 {
     std::string info;
     for (auto &r : rep) {
@@ -104,7 +108,10 @@ public:
     template <typename... Items> using fsm_table = fsmlib::detail::_transition_table<Items...>;
 
 public:
-    ///< 模块是否处于转移过程中
+    /**
+     * @brief 判断模块是否仍有异步状态转移未完成。
+     * @details 先检查转移标志，再以非阻塞方式检查 future；已完成的 future 会在这里收尾，避免状态残留。
+     */
     bool IsTransition() const
     {
         try {
@@ -144,6 +151,10 @@ public:
 
     const std::string GetName() const { return m_name.size() > 0 ? m_name : typeid(*this).name(); }
 
+    /**
+     * @brief 读取模块最近一次异常的可显示文本。
+     * @details 在错误锁内取出异常指针并重新抛出，统一转换为 what() 文本；没有异常时返回空字符串。
+     */
     const std::string GetLastError()
     {
         try {
@@ -163,6 +174,10 @@ public:
         return m_error ? m_error->except_ptr : nullptr;
     }
 
+    /**
+         * @brief 功能：生成包含模块名、状态和未解决错误的诊断文本。
+         * @details 机制：读取状态机当前状态和错误锁保护的数据，再把调用方附加信息拼接到统一格式。
+         */
     const std::string GetStateString(std::string extra = "")
     {
         std::string state_str = GetStateName(this->m_state);
@@ -274,6 +289,10 @@ protected:
     /// <typeparam name="Event"></typeparam>
     /// <param name="event"></param>
     /// <returns></returns>
+    /**
+     * @brief 异步提交一个模块状态事件。
+     * @details 拒绝忙碌任务和未完成转移，等待极短窗口回收旧 future 后创建新的异步 PostEvent 任务。
+     */
     template <typename Derived, typename Event> bool PostAsyncEvent(const Event &event)
     {
         try {
@@ -324,6 +343,10 @@ protected:
     }
 
 private:
+    /**
+     * @brief 将异常事件转换为模块错误状态。
+     * @details 只有模块尚未处于错误态时才调用 OnError；若未被子类接管，则把内部状态切换为 S_Error。
+     */
     State post_event(const transition_error &event)
     {
         fsmlib::fsm<State>::processing_lock lock(*this);
@@ -335,6 +358,10 @@ private:
         return get_current_state();
     }
 
+    /**
+     * @brief 处理模块故障救援事件并按请求决定暂停或恢复运行。
+     * @details 子类救援成功后清除错误，先进入挂起态；resume 为真时再执行 OnResume 并切回运行态。
+     */
     template <typename Object> State post_event(const transition_rescue &event)
     {
         fsmlib::fsm<State>::processing_lock lock(*this);
@@ -355,6 +382,10 @@ private:
         return get_current_state();
     }
 
+    /**
+     * @brief 处理暂停事件并把运行中的模块切换到挂起态。
+     * @details 仅在内部状态为 S_Running 时调用 OnPause，避免重复暂停触发副作用。
+     */
     template <typename Object> State post_event(const transition_pause &event)
     {
         fsmlib::fsm<State>::processing_lock lock(*this);
@@ -366,6 +397,10 @@ private:
         return get_current_state();
     }
 
+    /**
+     * @brief 处理恢复事件并把挂起模块切回运行态。
+     * @details 只有当前内部状态为 S_Suspending 时才调用 OnResume 并更新状态。
+     */
     template <typename Object> State post_event(const transition_resume &event)
     {
         fsmlib::fsm<State>::processing_lock lock(*this);
@@ -383,6 +418,10 @@ private:
     }
 
 private:
+    /**
+     * @brief 在状态机线程中执行一次完整状态转移。
+     * @details 按前置回调、状态机事件、状态提交、后置回调的顺序推进；异常进入统一错误状态并清除转移标志。
+     */
     template <typename Derived, typename Event> State PostEvent(const Event &event)
     {
         //{
@@ -452,6 +491,10 @@ protected:
     /// </summary>
     /// <param name="task"></param>
     /// <returns></returns>
+    /**
+     * @brief 将任务序列包装成模块任务线程可执行的闭包。
+     * @details 执行任务、记录报告、保存当前任务并清理重试状态；任务失败通过 task_error 交给模块错误处理。
+     */
     std::function<void()> MakeTask(const task::tasks_ptr<> &task)
     {
         if (!task)
@@ -505,6 +548,10 @@ protected:
     }
 
 protected:
+    /**
+     * @brief 初始化模块状态机、任务服务和后台任务线程。
+     * @details 保存状态/周期配置，创建 Asio work 保持任务服务存活，并启动 TaskThread 处理异步任务。
+     */
     Module(std::string name, State init_state, double period, double guard_period, int verbose = 0)
         : fsmlib::fsm<State>(init_state)
         , m_name(name)
@@ -539,6 +586,10 @@ protected:
     }
 
 private:
+    /**
+         * @brief 功能：运行模块任务队列对应的 Asio 工作线程。
+         * @details 机制：在线程中执行异步 task_service，直到中断或服务停止，任务异常由外围状态机处理。
+         */
     void TaskThread()
     {
 #ifdef USING_LOGURU
@@ -554,6 +605,10 @@ private:
     }
 
 protected:
+    /**
+         * @brief 功能：按模块周期执行后台 Worker 回调并处理调度间隔。
+         * @details 机制：记录起点、调用 Worker、扣除执行耗时后休眠，异常进入模块错误处理并在下一周期继续。
+         */
     void WorkerThread()
     {
 #ifdef USING_LOGURU
@@ -572,6 +627,10 @@ protected:
         }
     }
 
+    /**
+     * @brief 按模块周期扣除本轮执行耗时并等待下一轮。
+     * @details 正周期只等待剩余时间，非正周期短暂休眠让出 CPU，最后设置线程中断检查点。
+     */
     void _Do_Dispatch(const double t0)
     {
         // Thread dispatch: decide how long to sleep before next cycle.
@@ -585,6 +644,10 @@ protected:
         boost::this_thread::interruption_point();
     }
 
+    /**
+     * @brief 保存模块异常并驱动错误状态转移。
+     * @details 生成带时间、异常和错误码的 transition_error，记录日志后调用错误事件；错误处理自身再次失败时避免递归升级。
+     */
     void _Do_Error(const std::exception &e, const std::string &extra = "", bool ignore = false)
     {
 

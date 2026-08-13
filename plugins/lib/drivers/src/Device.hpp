@@ -114,8 +114,13 @@ public:
 
     const size_t GetWriteQueueSize() const { return m_write_queue->size(); }
 
+    /**
+     * @brief 功能：读取设备最近一次异常并转换为可显示文本。
+     * @details 机制：在错误锁内复制异常状态并重新抛出保存的异常；没有异常时返回空字符串。
+     */
     const std::string GetLastError()
     {
+        // 读取错误锁保护的异常指针并转换为可显示文本；没有异常时返回空字符串。
         try {
             boost::shared_lock_guard<decltype(m_error_lock)> lock(m_error_lock);
             if (_last_exception) {
@@ -133,8 +138,13 @@ public:
         return _last_exception;
     }
 
+    /**
+     * @brief 功能：组合设备名称、生命周期状态和未解决错误，生成诊断文本。
+     * @details 机制：读取状态映射和错误标志，再把调用方附加说明拼接到统一格式中。
+     */
     const std::string GetStateString(std::string extra = "")
     {
+        // 组合设备名称、生命周期状态和未解决错误，形成日志/UI 使用的稳定诊断文本。
         std::string state_str = GetStateName(_state);
         bool errored;
         {
@@ -164,6 +174,10 @@ public:
 #pragma region OCWR
 
 public:
+    /**
+         * @brief 功能：打开设备、清空旧缓冲并按工作模式启动读写线程。
+         * @details 机制：先调用设备实现的 OnOpen，再切换到 Opened 状态、清理故障和队列，最后创建后台线程。
+         */
     virtual bool Open()
     {
         try {
@@ -192,6 +206,10 @@ public:
         return false;
     }
 
+    /**
+         * @brief 功能：停止设备读写线程、清空队列并调用底层关闭钩子。
+         * @details 机制：先退出工作线程以阻止新 IO，再清空读写缓存，底层 OnClose 成功后才切换为 Offline。
+         */
     virtual bool Close()
     {
         try {
@@ -228,6 +246,10 @@ public:
          * @note 1. This function is called when `Threading` is true, otherwise it is
          * user-defined.
          *       2. Wether succeed or fail, packet and time are copied.
+         */
+    /**
+         * @brief 功能：向设备写队列加入带优先级和类别的命令包。
+         * @details 机制：线程模式下按容量保留高优先级/最新包，非线程模式直接调用 OnWrite；调用方可取得单调递增索引。
          */
     virtual bool Write(WritePacket &&packet,
                        int priority = (int)Normal,
@@ -284,8 +306,13 @@ protected:
          * user-defined.
          *       2. Wether succeed or fail, packet and time are copied.
          */
+    /**
+     * @brief 从读队列取出最早到达的一包数据。
+     * @details 设备在线时弹出队首并返回采样时间；当指定超时窗口时，返回值表示该数据是否仍然新鲜。
+     */
     bool ReadPop(ReadPacket &packet, double overtime = -1, double *time = NULL)
     {
+        // 从读队列弹出最早一包；输出采样时间并按 overtime 判断数据是否仍然新鲜。
         if (_state == state_t::Offline)
             return false;
         const double t = ilsr::Time::wall_time();
@@ -313,6 +340,10 @@ protected:
          * @note 1. This function is called when `Threading` is true, otherwise it is
          * user-defined.
          *       2. Wether succeed or fail, packet and time are copied.
+         */
+    /**
+         * @brief 功能：丢弃旧读包并取出当前队列中最新的一份数据。
+         * @details 机制：在读锁内持续弹出直到队列为空，再对最后一包执行超时检查；无数据或设备离线时返回失败。
          */
     bool ReadNewest(ReadPacket &packet, double overtime = -1, double *time = NULL)
     {
@@ -391,9 +422,13 @@ protected:
 
     virtual ErrorCode GetErrorCode(const boost::exception_ptr &_exception) { return _default_code; }
 
+    /**
+     * @brief 为读包补充序号和时间戳并放入有限容量的读队列。
+     * @details 队列满时淘汰旧包后重试入队，保证后台线程不会因缓存占满而阻塞整个设备循环。
+     */
     inline void PushRead(const ReadPacket &packet, double time = -1, size_t alt_counter = 0)
     {
-        // TODO: note this
+        // 阶段一：生成带序号和时间戳的读包；阶段二：在读锁内入队，满队列时淘汰最旧包。
         time = time < 0 ? ilsr::Time::wall_time() : time;
         ++m_read_counter;
         ReadPacketStamped _tmp{alt_counter > 0 ? (size_t)alt_counter : (size_t)m_read_counter,
@@ -418,6 +453,10 @@ protected:
 
 #pragma region Threading
 private:
+    /**
+         * @brief 功能：周期检查设备保活时间，超时后降级状态并调用 OnGuard。
+         * @details 机制：每 100 ms 读取单调时间；在线状态超过 guard_period 未刷新时标记 Opened，捕获钩子异常并进入统一错误处理。
+         */
     void GuardThread()
     {
 #ifdef USING_LOGURU
@@ -442,6 +481,10 @@ private:
         }
     }
 
+    /**
+         * @brief 功能：根据 Simplex/HalfDuplex/Duplex 工作模式创建 IO 线程。
+         * @details 机制：Simplex 使用合并读写循环，其余模式分别创建读线程和写线程，非法模式直接抛出异常。
+         */
     void _Do_StartThread()
     {
         switch (_mode) {
@@ -458,6 +501,10 @@ private:
         }
     }
 
+    /**
+     * @brief 功能：按设备周期扣除本轮执行耗时并休眠。
+     * @details 机制：正周期使用剩余时间等待，非正周期只让出极短时间，避免线程忙等占满 CPU。
+     */
     void _Do_Dispatch(std::chrono::high_resolution_clock::time_point t0)
     {
         // Thread dispatch: decide how long to sleep before next cycle.
@@ -472,6 +519,10 @@ private:
         }
     }
 
+    /**
+         * @brief 功能：统一记录设备异常、更新错误状态并按策略关闭底层设备。
+         * @details 机制：保存异常、错误码和发生时间后输出诊断；close 为真时调用 OnClose，否则直接转为 Offline。
+         */
     void _Do_Error(const std::exception &e, bool close = true)
     {
 
@@ -495,8 +546,17 @@ private:
         }
     }
 
+    /**
+         * @brief 功能：设备独立读线程的周期循环。
+         * @details 机制：在线时调用 OnRead，将成功数据放入读队列；每轮统一处理异常、周期等待和中断点。
+         */
+    /**
+     * @brief 运行设备的独立读取线程。
+     * @details 每轮调用底层 OnRead，成功数据进入读队列；异常、周期调度和线程中断统一由循环收尾处理。
+     */
     void ReadThread()
     {
+        // 阶段一：在线时调用底层 OnRead；阶段二：成功包入队；阶段三：统一异常处理、周期等待和中断检查。
 #ifdef USING_LOGURU
         loguru::set_thread_name((m_name + "-R").c_str());
 #endif
@@ -521,6 +581,10 @@ private:
     }
 
 private:
+    /**
+         * @brief 功能：从写队列取出最高优先级的最新命令，并丢弃同类别旧命令。
+         * @details 机制：在写锁内弹出最大元素，再扫描同 category 且时间更早的项并调用 OnDrop，避免陈旧命令追赶执行。
+         */
     bool TryPop(WritePacketStamped &packet)
     {
         boost::lock_guard<decltype(m_write_lock)> lock(m_write_lock);
@@ -544,6 +608,10 @@ private:
         return false;
     }
 
+    /**
+         * @brief 功能：设备独立写线程的周期循环。
+         * @details 机制：持续取出写队列命令并调用 OnWrite，直到队列为空；异常交给统一错误处理。
+         */
     void WriteThread()
     {
 #ifdef USING_LOGURU
@@ -570,6 +638,10 @@ private:
         }
     }
 
+    /**
+         * @brief 功能：Simplex 模式下协调一次写入、一次读取和本地序号更新。
+         * @details 机制：优先发送队列命令，再根据 BetweenWriteAndRead 决定是否读取，成功读包进入读队列并结束本轮回调。
+         */
     void WriteAndReadThread()
     {
 #ifdef USING_LOGURU
@@ -633,6 +705,10 @@ protected:
          * @param guard_period
          * @param verbose
          */
+    /**
+         * @brief 功能：初始化设备线程参数、读写队列容量和保活线程。
+         * @details 机制：保存周期/模式配置，设置队列容量，先建立保活监视线程；工作 IO 线程延迟到 Open 时创建。
+         */
     Device(std::string name, double period, double guard_period, int verbose = 1)
         : m_name(name)
         , _mode(Mode)
@@ -655,6 +731,10 @@ protected:
         m_guard_thread = boost::make_shared<boost::thread>(&Device::GuardThread, this);
     }
 
+    /**
+         * @brief 功能：按保活线程—工作线程—底层关闭的顺序销毁设备。
+         * @details 机制：逐级中断并 join 所有线程，最后调用 OnClose；析构阶段吞掉异常，避免异常穿出析构函数。
+         */
     ~Device()
     {
         try {
@@ -680,6 +760,10 @@ protected:
         }
     }
 
+    /**
+     * @brief 功能：中断并等待全部设备工作线程退出。
+     * @details 机制：先统一发出 interruption，再逐个 join，最后清空线程句柄列表，确保底层资源销毁前没有后台访问。
+     */
     void QuitThreads()
     {
         // Close working threads

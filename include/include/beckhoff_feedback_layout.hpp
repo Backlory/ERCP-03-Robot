@@ -66,6 +66,10 @@ inline bool FeedbackLeafAvailable(const RobotFeedbackLeafErrors &errors, std::si
     return errors[index] == 0;
 }
 
+/**
+ * @brief 将 Beckhoff 反馈叶字段按独立读取结果映射到统一状态快照。
+ * @details 每个字段只在对应 ADS 读取成功时写入；失败字段清零，避免把旧值误当成当前有效反馈。
+ */
 // Apply only values whose corresponding leaf read succeeded. Failed leaves
 // are cleared in the local snapshot and represented by common_ads_error plus
 // the rate-limited field log in the ADS adapter; no startup policy is applied
@@ -74,6 +78,7 @@ inline void ApplyRobotFeedback(const RobotFeedbackLeaves &feedback,
                                const RobotFeedbackLeafErrors &errors,
                                BeckhoffSnapshot &snapshot)
 {
+    // 阶段一：把每个叶字段的错误码转换为可用性判断；阶段二：按 PLC/状态快照索引映射开关、连续值和轴位置。
     const auto available = [&](std::size_t index) {
         return FeedbackLeafAvailable(errors, index);
     };

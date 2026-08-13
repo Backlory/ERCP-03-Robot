@@ -9,6 +9,10 @@
 
 // extern int AfxMain();
 //cylTest
+/**
+ * @brief RobotSystem 进程入口。
+ * @details 设置本地化并加载配置，初始化日志、时间服务和机器人单例，最后启动 HTTP 服务承载控制接口。
+ */
 int main(int argv, char *argc[])
 {
     std::setlocale(LC_ALL, "zh_CN.UTF-8");

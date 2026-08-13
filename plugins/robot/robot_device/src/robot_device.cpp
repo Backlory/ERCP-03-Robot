@@ -39,8 +39,13 @@ _RobotDevice::_RobotDevice()
     InitDevices(GetSettings().Basic.Verbose());
 }
 
+/**
+ * @brief 根据配置初始化 Beckhoff 设备连接。
+ * @details 最多重试五次；连接仍失败时保留离线状态，由上层生命周期和状态轮询继续处理，而不在初始化阶段阻塞退出。
+ */
 void _RobotDevice::InitDevices(int verbose)
 {
+    // 按配置建立 Beckhoff 驱动连接，最多重试五次；连接失败只保留离线状态，由上层在后续周期继续处理。
     auto &settings = GetSettings();
 
     // 倍福驱动初始化

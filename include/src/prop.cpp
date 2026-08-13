@@ -52,8 +52,13 @@ prop_item::prop_item(const this_is_private,
 {
 }
 
+/**
+ * @brief 将单个属性及其元数据导出为 YAML 节点。
+ * @details 输出字段路径、类型、默认值、当前值以及可选标签和备注，供配置查询接口使用。
+ */
 YAML::Node prop_item::get()
 {
+    // 将属性路径、类型、默认值、当前值及标签/备注集中导出为 YAML 节点。
     YAML::Node item;
     item["field"] = parent->get_field();
     item["name"] = name;
@@ -104,6 +109,10 @@ void prop_namespace::emplace_ns(prop_namespace &ns)
     }
 }
 
+/**
+ * @brief 计算当前命名空间相对于根节点的层级路径。
+ * @details 沿父节点递归拼接名称，根节点返回空字符串，子节点之间使用 '/' 分隔。
+ */
 std::string prop_namespace::get_field() const
 {
     if (!is_root()) {
@@ -126,8 +135,13 @@ bool prop_namespace::is_leaf() const
     return sub_ns.empty() && !leafs.empty();
 }
 
+/**
+ * @brief 从根属性命名空间生成可序列化的 YAML 属性列表。
+ * @details 校验调用对象必须是根节点，再按命名空间递归收集叶属性并保持遍历顺序。
+ */
 YAML::Node prop_namespace::generate(const prop_namespace &pns)
 {
+    // 只接受根命名空间，递归收集所有子命名空间的属性节点并生成 YAML 序列。
     if (!pns.is_root()) {
         throw std::runtime_error("`generate` only accept a root namespace.");
     }
@@ -139,8 +153,13 @@ YAML::Node prop_namespace::generate(const prop_namespace &pns)
     return (chs.size() <= 0) ? YAML::Node() : YAML::Node(chs);
 }
 
+/**
+ * @brief 收集当前命名空间及其所有后代属性。
+ * @details 先输出当前层叶子，再递归追加子命名空间，形成稳定且易读的配置顺序。
+ */
 std::vector<YAML::Node> prop_namespace::get()
 {
+    // 先收集当前命名空间叶子，再递归追加子命名空间，保持配置树的自然阅读顺序。
     std::vector<YAML::Node> chs;
 
     for (auto &lf : leafs) {
@@ -153,8 +172,13 @@ std::vector<YAML::Node> prop_namespace::get()
     return chs;
 }
 
+/**
+ * @brief 按 '/' 分隔的属性路径查找对应属性值。
+ * @details 先逐级定位命名空间，再在目标层查找叶属性；任一层不存在时返回空指针。
+ */
 prop_ptr prop_namespace::find(const std::string &field)
 {
+    // 阶段一：按 '/' 分割属性路径；阶段二：逐级定位命名空间；阶段三：返回目标叶子的当前值。
     auto fs = ilsr::split(field, "/");
     if (fs.size() < 1)
         return nullptr;

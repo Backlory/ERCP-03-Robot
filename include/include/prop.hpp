@@ -96,8 +96,13 @@ public:
         return std::make_shared<prop_item>(this_is_private(), ::std::forward<Args>(args)...);
     }
 
+    /**
+     * @brief 功能：为属性设置与声明类型匹配的约束标签。
+     * @details 机制：先校验模板类型与属性类型，再创建新标签并交换到属性节点；类型不匹配时抛出异常。
+     */
     template <types T, typename... Args> prop_item &set_tag(Args &&...args)
     {
+        // 校验标签类型与属性声明一致后替换标签对象，保证后续配置校验使用匹配的约束。
         if (T != this->type) {
             std::stringstream ss;
             ss << "Tag type is different with the defination. [ ";
@@ -155,8 +160,13 @@ public:
 
     prop_namespace &add(const std::string &name);
 
+    /**
+     * @brief 功能：在命名空间中创建一个带默认值的属性叶子节点。
+     * @details 机制：创建默认值和节点，检查允许的标签类型，最后登记叶子并拒绝重复名称。
+     */
     template <typename T> prop_item &emplace(const std::string &name, types type, const T &value)
     {
+        // 阶段一：创建默认值和属性节点，并检查该值类型是否允许作为此属性的标签。
         prop_ptr def = std::make_shared<prop_value<T>>(value);
 
         auto ptr = prop_item::create(*this, name, type, def);
@@ -173,6 +183,7 @@ public:
             throw std::runtime_error(ss.str().c_str());
         }
 
+        // 阶段二：登记叶子节点，拒绝同一命名空间中的重复属性名。
         auto p = leafs.insert(ptr);
         if (!p.second) {
             throw std::runtime_error("This item `" + name + "` already exists.");
