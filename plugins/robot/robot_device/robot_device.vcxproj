@@ -24,6 +24,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\..\..\include\include\beckhoff_snapshot.hpp" />
+    <ClInclude Include="..\..\..\include\include\beckhoff_snapshot_policy.hpp" />
     <ClInclude Include="..\..\lib\drivers\src\beckhoff_driver.hpp" />
     <ClInclude Include="..\..\lib\drivers\src\direct_ads_transport.hpp" />
     <ClInclude Include="..\..\..\include\include\beckhoff_feedback_layout.hpp" />

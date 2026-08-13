@@ -11,8 +11,9 @@ The script uses `clang-format` from `PATH`, the Visual Studio bundled copy, or t
 specified by `ERCP_CLANG_FORMAT_EXE`. It fails if the version is not exactly 22.1.3.
 
 `.clang-format-ignore` is the formatting boundary. It excludes third-party code and every
-`[SHARED-WIRE]` distributed copy. Shared-wire files must be changed in the canonical
-`shared-wire` repository and distributed with `sync.bat`; never format a project copy directly.
+`[SHARED-WIRE]` distributed copy. Robot UDP V3 is owned by the Cloud path declared in
+`protocol/robot_udp_v3.hpp`; distribute and verify it with the Cloud
+`tools/robot_udp_v3_sync.ps1` script. Other shared-wire files follow their `SYNC-SOURCE` headers.
 
 Keep formatting-only changes separate from functional changes. Run the complete build and wire
 golden tests after a repository-wide formatting update.

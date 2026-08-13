@@ -4,9 +4,9 @@
 #include <limits>
 #include <random>
 
-#include "robot_udp_v2_runtime.hpp"
+#include "robot_udp_v3_runtime.hpp"
 
-namespace ercp::robot_udp_v2 {
+namespace ercp::robot_udp_v3 {
 
 std::uint64_t UnixNowNs()
 {
@@ -201,4 +201,4 @@ protocol::AppliedCommandPayload AppliedCommandTracker::Snapshot() const
     return payload_;
 }
 
-} // namespace ercp::robot_udp_v2
+} // namespace ercp::robot_udp_v3

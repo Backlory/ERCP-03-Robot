@@ -4,7 +4,7 @@
 #include <stdint.h>
 
 // This header contains Beckhoff/PLC domain types only. It is not a network ABI.
-// Robot UDP V2 is defined and encoded explicitly in protocol/robot_udp_v2.hpp.
+// Robot UDP V3 is defined and encoded explicitly in protocol/robot_udp_v3.hpp.
 // clang-format off
 enum class motor_t : int {
     // 臂展电机

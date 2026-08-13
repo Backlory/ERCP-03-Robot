@@ -24,9 +24,9 @@ public:
     virtual bool BeckhoffMoveArmTo(bool bIsOpen) const = 0;
     virtual beckhoff_arm_move_state BeckhoffArmMoveState() const = 0;
 
-    // 跟随数据
-    virtual std::uint32_t BeckhoffFollowDataResult(unsigned long length,
-                                                   const void *data) const = 0;
+    // Typed follow command; the adapter owns the Beckhoff byte layout and size.
+    virtual std::uint32_t BeckhoffWriteFollowCommand(
+        const beckhoff_follow_cmd &command) const = 0;
     virtual std::uint32_t BeckhoffGoldDiscreteCommandResult(
         const device::beckhoff::GoldDiscreteCommand &command) const = 0;
     virtual bool BeckhoffArmOperation(beckhoff_arm_operation iArmOper) const = 0;

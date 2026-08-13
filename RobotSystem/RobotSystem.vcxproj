@@ -136,7 +136,7 @@
     <ClCompile Include="Net\server.interface.cpp" />
     <ClCompile Include="Robot\YunSBot.Base.cpp" />
     <ClCompile Include="Robot\YunSBot.ControlChannel.cpp" />
-    <ClCompile Include="Robot\YunSBot.UdpV2.cpp" />
+    <ClCompile Include="Robot\YunSBot.UdpV3.cpp" />
     <ClCompile Include="RPC\ArmModule.cpp" />
     <ClCompile Include="RPC\ArmModule.Actions.cpp" />
     <ClCompile Include="Robot\Motions\Motions.Cycles.cpp" />
@@ -145,6 +145,9 @@
     <ClInclude Include="Net\server.handler.h" />
     <ClInclude Include="Net\server.interface.h" />
     <ClInclude Include="Robot\YunSBot.h" />
+    <ClInclude Include="Robot\control_cycle_policy.hpp" />
+    <ClInclude Include="..\include\include\robot_udp_v3_runtime.hpp" />
+    <ClInclude Include="..\include\include\protocol\robot_udp_v3.hpp" />
     <ClInclude Include="..\include\include\robot_udp_v2_runtime.hpp" />
     <ClInclude Include="..\include\include\protocol\robot_udp_v2.hpp" />
     <ClInclude Include="RPC\ArmModule.hpp" />

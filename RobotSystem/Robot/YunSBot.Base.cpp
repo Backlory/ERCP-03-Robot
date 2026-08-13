@@ -7,6 +7,7 @@
 #include "robot_devices.h"
 #include "robot_config.h"
 #include "YunSBot.h"
+#include "control_cycle_policy.hpp"
 #include "RPC/ArmModule.hpp"
 
 using namespace task;
@@ -18,8 +19,8 @@ namespace ercp {
 
 YunSBot::YunSBot()
     : base(*this)
-    , master(*this, protocol::v2::Source::Master, GetSettings().Basic.Master(), 31001, 31002, false)
-    , situaware(*this, protocol::v2::Source::Cloud, "127.0.0.1", 31003, 31004, true)
+    , master(*this, protocol::v3::Source::Master, GetSettings().Basic.Master(), 31001, 31002, false)
+    , situaware(*this, protocol::v3::Source::Cloud, "127.0.0.1", 31003, 31004, true)
 {
     ROBOT_INFO(true, "Start lingcai robot !");
     base.StartThreads();
@@ -28,10 +29,10 @@ YunSBot::YunSBot()
 }
 
 YunSBot::_base::_base(YunSBot &p)
-    : m_status_session_id(robot_udp_v2::MakeSessionId())
+    : m_status_session_id(robot_udp_v3::MakeSessionId())
     , parent(p)
 {
-    m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
+    m_lifecycle_changed_unix_ns = robot_udp_v3::UnixNowNs();
     // Task 11: Master 强制优先仲裁开关,默认从配置读(basic.master_priority,默认 true)。
     m_master_priority = GetSettings().Basic.MasterPriority();
     InitStartingTask();
@@ -43,38 +44,36 @@ YunSBot::_base::_base(YunSBot &p)
         m_active_source = 0;
         m_command_fresh = false;
         m_accepted_command_received_unix_ns = 0;
-        m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
+        m_lifecycle_changed_unix_ns = robot_udp_v3::UnixNowNs();
     });
     OnRobotStartSucceed.connect([&]() {
-        m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
+        m_lifecycle_changed_unix_ns = robot_udp_v3::UnixNowNs();
         StartControlThreads();
     });
-    OnRobotStartFailed.connect([&]() { m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs(); });
+    OnRobotStartFailed.connect([&]() { m_lifecycle_changed_unix_ns = robot_udp_v3::UnixNowNs(); });
     BeforeRobotStopping.connect([&]() {
         const bool automaticMode = m_RobotAutoMode.load();
-        const auto selectedSource = robot_udp_v2::SelectedControlSource(automaticMode);
+        const auto selectedSource = robot_udp_v3::SelectedControlSource(automaticMode);
         m_RobotAutoMode = false;
         ExitControlThreads();
 
         // The control loop is gone, so explicitly make the final PLC write a safety zero.
         // This uses the unchanged Beckhoff native 10-double + 6-BOOL command layout.
-        protocol::v2::ControlPayload ignored;
-        robot_udp_v2::CommandMetadata metadata;
+        protocol::v3::ControlPayload ignored;
+        robot_udp_v3::CommandMetadata metadata;
         auto &channel = automaticMode ? parent.situaware : parent.master;
         if (!channel.LatestCommand(ignored, metadata)) {
             metadata.source = selectedSource;
         }
-        const auto zero = robot_udp_v2::ZeroControl();
-        beckhoff_follow_cmd followCommand;
-        build_follow_cmd(zero, followCommand);
-        const auto appliedAt = robot_udp_v2::UnixNowNs();
-        const auto adsError =
-            GetRobot().BeckhoffFollowDataResult(sizeof(followCommand), &followCommand);
+        const auto zero = robot_udp_v3::ZeroControl();
+        const auto followCommand = control_cycle::ToFollowCommand(zero);
+        const auto appliedAt = robot_udp_v3::UnixNowNs();
+        const auto adsError = GetRobot().BeckhoffWriteFollowCommand(followCommand);
         const bool succeeded = adsError == 0;
         m_applied_commands.MarkAttempt(zero,
                                        metadata,
-                                       succeeded ? protocol::v2::ApplyResult::TimedOutToZero
-                                                 : protocol::v2::ApplyResult::Failed,
+                                       succeeded ? protocol::v3::ApplyResult::TimedOutToZero
+                                                 : protocol::v3::ApplyResult::Failed,
                                        adsError,
                                        appliedAt,
                                        succeeded);
@@ -82,34 +81,18 @@ YunSBot::_base::_base(YunSBot &p)
         m_active_source = 0;
         m_command_fresh = false;
         m_accepted_command_received_unix_ns = 0;
-        m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs();
+        m_lifecycle_changed_unix_ns = robot_udp_v3::UnixNowNs();
     });
     OnRobotStopFailed.connect([&]() { StartControlThreads(); });
-    OnRobotStopEnd.connect([&]() { m_lifecycle_changed_unix_ns = robot_udp_v2::UnixNowNs(); });
+    OnRobotStopEnd.connect([&]() { m_lifecycle_changed_unix_ns = robot_udp_v3::UnixNowNs(); });
 
     work = boost::make_shared<boost::asio::io_service::work>(this->io_service);
 }
 
 void YunSBot::_base::StartThreads()
 {
-    m_bg_worker = boost::make_shared<boost::thread>([this]() {
-        ROBOT_THREADNAME("BgAuto");
-
-        while (!boost::this_thread::interruption_requested()) {
-            ////////////////////////////////////////////////////////////////////////
-            double t = ilsr::Time::wall_time();
-            try {
-                OnBackground(t);
-            } catch (std::exception &e) {
-                //ROBOT_ERROR(true, "[Background Error]: " << e.what())
-            }
-            double te = ilsr::Time::wall_time();
-            ////////////////////////////////////////////////////////////////////////
-            double sleep = std::max(0.00, 0.020 - (te - t)); // max 50Hz
-            ilsr::Time::sleep_for(sleep);
-            boost::this_thread::interruption_point();
-        }
-    });
+    m_bg_worker = boost::make_shared<boost::thread>(
+        [this]() { RunPeriodicLoop("BgAuto", 0.020, OnBackground); });
 
     worker = boost::make_shared<std::thread>([this]() {
         try {
@@ -124,24 +107,28 @@ void YunSBot::_base::StartThreads()
 void YunSBot::_base::StartControlThreads()
 {
     if (!m_ctrl_worker) {
-        m_ctrl_worker = boost::make_shared<boost::thread>([this]() {
-            ROBOT_THREADNAME("BgAuto");
+        m_ctrl_worker = boost::make_shared<boost::thread>(
+            [this]() { RunPeriodicLoop("BgAuto", 0.008, OnControl); });
+    }
+}
 
-            while (!boost::this_thread::interruption_requested()) {
-                ////////////////////////////////////////////////////////////////////////
-                double t = ilsr::Time::wall_time();
-                try {
-                    OnControl(t);
-                } catch (std::exception &e) {
-                    //ROBOT_ERROR(true, "[Control Error]: " << e.what())
-                }
-                double te = ilsr::Time::wall_time();
-                ////////////////////////////////////////////////////////////////////////
-                double sleep = std::max(0.00, 0.008 - (te - t)); // max 125Hz
-                ilsr::Time::sleep_for(sleep);
-                boost::this_thread::interruption_point();
-            }
-        });
+void YunSBot::_base::RunPeriodicLoop(const char *threadName,
+                                     double intervalSeconds,
+                                     boost::signals2::signal<void(double)> &callback)
+{
+    ROBOT_THREADNAME(threadName);
+
+    while (!boost::this_thread::interruption_requested()) {
+        const double cycleStarted = ilsr::Time::wall_time();
+        try {
+            callback(cycleStarted);
+        } catch (const std::exception &) {
+            // Periodic callbacks historically isolate failures and continue the next cycle.
+        }
+
+        const double elapsed = ilsr::Time::wall_time() - cycleStarted;
+        ilsr::Time::sleep_for(std::max(0.0, intervalSeconds - elapsed));
+        boost::this_thread::interruption_point();
     }
 }
 
@@ -173,60 +160,64 @@ YunSBot::_base::~_base()
 
 bool YunSBot::_base::Start(size_t total)
 {
-    if (m_future.valid()) {
-        if (m_future.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout) {
-            return false;
-        }
-        m_future.get();
+    if (!WaitForLifecycleTask())
+        return false;
+
+    m_future = std::async(std::launch::async, [this, total]() { return ExecuteStart(total); });
+    return true;
+}
+
+bool YunSBot::_base::WaitForLifecycleTask()
+{
+    if (!m_future.valid())
+        return true;
+    if (m_future.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout)
+        return false;
+
+    m_future.get();
+    return true;
+}
+
+bool YunSBot::_base::RunStartTasks(std::size_t totalAttempts)
+{
+    std::size_t remainingAttempts = totalAttempts;
+    while (remainingAttempts > 0) {
+        ROBOT_INFO(true,
+                   fmt::format("Robot start try {} ...", totalAttempts - remainingAttempts))
+        if (InitTasks->run(m_init_report))
+            return true;
+
+        LogTaskError(InitTasks->get_error());
+        --remainingAttempts;
+    }
+    return false;
+}
+
+bool YunSBot::_base::ExecuteStart(std::size_t totalAttempts)
+{
+    if (IsRobotRunning())
+        return false;
+
+    ROBOT_INFO(true, "Robot starting ...")
+    m_RobotStarting = true;
+    if (m_init_report.empty())
+        InitTasks->report(m_init_report);
+    BeforeRobotStarting();
+
+    if (!RunStartTasks(totalAttempts)) {
+        ROBOT_INFO(true, "Robot start failed.")
+        ROBOT_INFO(true, GetStartInfo());
+        OnRobotStartFailed();
+        m_RobotStarting = false;
+        return false;
     }
 
-    m_future = std::async(std::launch::async, [this, total]() {
-        size_t times = total;
-        if (IsRobotRunning()) {
-            return false;
-        }
-
-        ROBOT_INFO(true, "Robot starting ...")
-        m_RobotStarting = true;
-
-        if (m_init_report.size() == 0) {
-            InitTasks->report(m_init_report);
-        }
-
-        BeforeRobotStarting();
-
-        while (times > 0) {
-            ROBOT_INFO(true, fmt::format("Robot start try {} ...", total - times))
-            if (InitTasks->run(m_init_report)) {
-                break;
-            }
-
-            auto err = InitTasks->get_error();
-            try {
-                std::rethrow_exception(err);
-            } catch (std::exception e) {
-                ROBOT_ERROR(true, "Error: " << e.what())
-            }
-            times--;
-        }
-
-        if (times <= 0) {
-            ROBOT_INFO(true, "Robot start failed.")
-            ROBOT_INFO(true, GetStartInfo());
-            OnRobotStartFailed();
-            m_RobotStarting = false;
-            return false;
-        }
-
-        ROBOT_INFO(true, "Robot started.")
-        ROBOT_INFO(true, GetStartInfo());
-        m_RobotStarted = true;
-        OnRobotStartSucceed();
-        m_RobotStarting = false;
-
-        m_deinit_report.clear();
-        return true;
-    });
+    ROBOT_INFO(true, "Robot started.")
+    ROBOT_INFO(true, GetStartInfo());
+    m_RobotStarted = true;
+    OnRobotStartSucceed();
+    m_RobotStarting = false;
+    m_deinit_report.clear();
     return true;
 }
 
@@ -238,55 +229,53 @@ bool YunSBot::_base::Stop()
         return false;
     }
 
-    if (m_future.valid()) {
-        if (m_future.wait_for(std::chrono::milliseconds(100)) == std::future_status::timeout) {
-            return false;
-        }
-        m_future.get();
-    }
+    if (!WaitForLifecycleTask())
+        return false;
 
-    m_future = std::async(std::launch::async, [this]() {
-        if (!IsRobotRunning()) {
-            return false;
-        }
+    m_future = std::async(std::launch::async, [this]() { return ExecuteStop(); });
+    return true;
+}
 
-        ROBOT_INFO(true, "Robot stopping ...")
-        m_RobotStopping = true;
-        BeforeRobotStopping();
+bool YunSBot::_base::ExecuteStop()
+{
+    if (!IsRobotRunning())
+        return false;
 
-        // init_info_t info = m_init_info;
-        if (m_deinit_report.size() == 0) {
-            DeinitTasks->report(m_deinit_report);
-        }
+    ROBOT_INFO(true, "Robot stopping ...")
+    m_RobotStopping = true;
+    BeforeRobotStopping();
+    if (m_deinit_report.empty())
+        DeinitTasks->report(m_deinit_report);
 
-        if (!DeinitTasks->run(m_deinit_report)) {
-            ROBOT_INFO(true, "Robot stop failed.")
-            ROBOT_INFO(true, GetStopInfo());
-            OnRobotStopFailed();
-            OnRobotStopEnd();
-            m_RobotStopping = false;
-            return false;
-        }
-
-        auto err = InitTasks->get_error();
-        try {
-            std::rethrow_exception(err);
-        } catch (std::exception e) {
-            ROBOT_ERROR(true, "Error: " << e.what())
-        }
-
-        ROBOT_INFO(true, "Robot stopped.")
+    if (!DeinitTasks->run(m_deinit_report)) {
+        ROBOT_INFO(true, "Robot stop failed.")
         ROBOT_INFO(true, GetStopInfo());
-        m_RobotStarted = false;
-        if (OnRobotStopped)
-            OnRobotStopped();
+        OnRobotStopFailed();
         OnRobotStopEnd();
         m_RobotStopping = false;
+        return false;
+    }
 
-        m_init_report.clear();
-        return true;
-    });
+    // Keep the legacy completion-error source unchanged for compatibility.
+    LogTaskError(InitTasks->get_error());
+    ROBOT_INFO(true, "Robot stopped.")
+    ROBOT_INFO(true, GetStopInfo());
+    m_RobotStarted = false;
+    if (OnRobotStopped)
+        OnRobotStopped();
+    OnRobotStopEnd();
+    m_RobotStopping = false;
+    m_init_report.clear();
     return true;
+}
+
+void YunSBot::_base::LogTaskError(const std::exception_ptr &error) const
+{
+    try {
+        std::rethrow_exception(error);
+    } catch (const std::exception &exception) {
+        ROBOT_ERROR(true, "Error: " << exception.what())
+    }
 }
 
 std::vector<std::pair<std::string, int>> YunSBot::_base::GetStartReport() const
@@ -528,14 +517,14 @@ void YunSBot::_base::InitBackgroundTask()
         boost::bind(&YunSBot::_base::ControlRunnable2, this, boost::placeholders::_1));
 }
 
-protocol::v2::AppliedCommandPayload YunSBot::_base::AppliedCommands() const
+protocol::v3::AppliedCommandPayload YunSBot::_base::AppliedCommands() const
 {
     return m_applied_commands.Snapshot();
 }
 
-protocol::v2::Source YunSBot::_base::ActiveSource() const
+protocol::v3::Source YunSBot::_base::ActiveSource() const
 {
-    return static_cast<protocol::v2::Source>(m_active_source.load());
+    return static_cast<protocol::v3::Source>(m_active_source.load());
 }
 
 std::uint64_t YunSBot::_base::AcceptedCommandReceivedUnixNs() const
@@ -548,7 +537,7 @@ std::uint64_t YunSBot::_base::LifecycleChangedUnixNs() const
     return m_lifecycle_changed_unix_ns.load();
 }
 
-protocol::v2::Bytes YunSBot::_base::BuildStatusPacket()
+protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
 {
     const auto snapshot = GetRobot().BeckhoffSnapshot();
     const auto common_sample_unix_ns = snapshot.sampled_at_unix_ns[0];
@@ -560,19 +549,19 @@ protocol::v2::Bytes YunSBot::_base::BuildStatusPacket()
         return {};
     }
 
-    const auto now = robot_udp_v2::UnixNowNs();
-    protocol::v2::FullStatusPayload status;
+    const auto now = robot_udp_v3::UnixNowNs();
+    protocol::v3::FullStatusPayload status;
 
     if (IsRobotStopping())
-        status.runtime.lifecycle = protocol::v2::RobotLifecycle::Stopping;
+        status.runtime.lifecycle = protocol::v3::RobotLifecycle::Stopping;
     else if (IsRobotStarting())
-        status.runtime.lifecycle = protocol::v2::RobotLifecycle::Starting;
+        status.runtime.lifecycle = protocol::v3::RobotLifecycle::Starting;
     else if (IsRobotRunning())
-        status.runtime.lifecycle = protocol::v2::RobotLifecycle::Running;
+        status.runtime.lifecycle = protocol::v3::RobotLifecycle::Running;
     else
-        status.runtime.lifecycle = protocol::v2::RobotLifecycle::Stopped;
+        status.runtime.lifecycle = protocol::v3::RobotLifecycle::Stopped;
     status.runtime.mode =
-        IsAutoMode() ? protocol::v2::RobotMode::Automatic : protocol::v2::RobotMode::Manual;
+        IsAutoMode() ? protocol::v3::RobotMode::Automatic : protocol::v3::RobotMode::Manual;
     status.runtime.active_source = ActiveSource();
     status.runtime.flags =
         (snapshot.connection_state != device::beckhoff::SnapshotConnectionState::Disconnected
@@ -583,7 +572,7 @@ protocol::v2::Bytes YunSBot::_base::BuildStatusPacket()
     status.runtime.accepted_command_received_unix_ns = AcceptedCommandReceivedUnixNs();
 
     status.beckhoff_common.move_state =
-        static_cast<protocol::v2::BeckhoffMoveState>(snapshot.move_state);
+        static_cast<protocol::v3::BeckhoffMoveState>(snapshot.move_state);
     status.beckhoff_common.output_switches = snapshot.output_switches;
     status.beckhoff_common.power_level = snapshot.power_level;
     status.beckhoff_common.prepare_state = snapshot.prepare_state;
@@ -595,9 +584,9 @@ protocol::v2::Bytes YunSBot::_base::BuildStatusPacket()
     status.ercp_state.flags = snapshot.ercp_flags;
     status.ercp_state.drive_errors = snapshot.ercp_drive_errors;
     status.ercp_state.motor_errors = snapshot.ercp_motor_errors;
-    status.ercp_state.type = static_cast<protocol::v2::ErcpDeviceType>(snapshot.ercp_type);
+    status.ercp_state.type = static_cast<protocol::v3::ErcpDeviceType>(snapshot.ercp_type);
     status.ercp_state.move_status =
-        static_cast<protocol::v2::ErcpMoveState>(snapshot.ercp_move_status);
+        static_cast<protocol::v3::ErcpMoveState>(snapshot.ercp_move_status);
     status.ercp_feedback.ercp_deliver_force = snapshot.ercp_deliver_force;
     status.ercp_feedback.guide_wire_force = snapshot.guide_wire_force;
     status.ercp_feedback.bow_force = snapshot.bow_force;
@@ -606,9 +595,9 @@ protocol::v2::Bytes YunSBot::_base::BuildStatusPacket()
     status.ercp_feedback.inject_current_position_01 = snapshot.inject_current_position_01;
     status.ercp_feedback.inject_current_position_02 = snapshot.inject_current_position_02;
     status.ercp_feedback.inject_state_01 =
-        static_cast<protocol::v2::InjectorState>(snapshot.inject_state_01);
+        static_cast<protocol::v3::InjectorState>(snapshot.inject_state_01);
     status.ercp_feedback.inject_state_02 =
-        static_cast<protocol::v2::InjectorState>(snapshot.inject_state_02);
+        static_cast<protocol::v3::InjectorState>(snapshot.inject_state_02);
     status.ercp_feedback.balloon_pressure = snapshot.balloon_pressure;
     status.ercp_feedback.operator_position = snapshot.operator_position;
     const auto applied_commands = AppliedCommands();
@@ -619,7 +608,7 @@ protocol::v2::Bytes YunSBot::_base::BuildStatusPacket()
     status.ads_diagnostics.poll_completed_unix_ns = snapshot.poll_completed_unix_ns;
     status.ads_diagnostics.snapshot_published_unix_ns = snapshot.published_unix_ns;
     status.ads_diagnostics.connection_state =
-        static_cast<protocol::v2::AdsConnectionState>(snapshot.connection_state);
+        static_cast<protocol::v3::AdsConnectionState>(snapshot.connection_state);
     status.ads_diagnostics.valid_groups = snapshot.valid_groups;
     status.ads_diagnostics.stale_groups = snapshot.stale_groups;
     status.ads_diagnostics.consecutive_failed_polls = snapshot.consecutive_failed_polls;
@@ -661,18 +650,18 @@ protocol::v2::Bytes YunSBot::_base::BuildStatusPacket()
                                  snapshot.published_unix_ns,
                                  now};
 
-    protocol::v2::Header header;
-    header.message_type = protocol::v2::MessageType::RobotStatus;
-    header.source = protocol::v2::Source::Robot;
+    protocol::v3::Header header;
+    header.message_type = protocol::v3::MessageType::RobotStatus;
+    header.source = protocol::v3::Source::Robot;
     header.session_id = m_status_session_id;
     header.sequence = m_status_sequence++;
     header.sent_at_unix_ns = now;
 
-    protocol::v2::Bytes packet;
+    protocol::v3::Bytes packet;
     std::string error;
-    if (!protocol::v2::encodeFullStatus(header, status, packet, &error)) {
+    if (!protocol::v3::encodeFullStatus(header, status, packet, &error)) {
         ROBOT_ERROR(GetSettings().Basic.Verbose() > 0,
-                    fmt::format("Robot V2 status encode failed: {}", error))
+                    fmt::format("Robot V3 status encode failed: {}", error))
         packet.clear();
     } else {
         m_last_sent_common_sample_unix_ns = common_sample_unix_ns;

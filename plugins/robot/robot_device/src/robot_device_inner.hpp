@@ -32,8 +32,8 @@ public:
     // 展开折叠
     bool BeckhoffMoveArmTo(bool bIsOpen) const override;
     beckhoff_arm_move_state BeckhoffArmMoveState() const override;
-    // 跟随数据
-    std::uint32_t BeckhoffFollowDataResult(unsigned long length, const void *data) const override;
+    std::uint32_t BeckhoffWriteFollowCommand(
+        const beckhoff_follow_cmd &command) const override;
     std::uint32_t BeckhoffGoldDiscreteCommandResult(
         const device::beckhoff::GoldDiscreteCommand &command) const override;
     bool BeckhoffArmOperation(beckhoff_arm_operation iArmOper) const override;

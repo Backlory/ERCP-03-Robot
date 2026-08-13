@@ -119,9 +119,11 @@ beckhoff_arm_move_state _RobotDevice::BeckhoffArmMoveState() const
     ;
 }
 
-std::uint32_t _RobotDevice::BeckhoffFollowDataResult(unsigned long length, const void *data) const
+std::uint32_t _RobotDevice::BeckhoffWriteFollowCommand(
+    const beckhoff_follow_cmd &command) const
 {
-    return beckhoff::Beckhoff_Motor::GetInstance().FollowOperationDataResult(length, data);
+    return beckhoff::Beckhoff_Motor::GetInstance().FollowOperationDataResult(
+        sizeof(command), &command);
 }
 
 std::uint32_t _RobotDevice::BeckhoffGoldDiscreteCommandResult(

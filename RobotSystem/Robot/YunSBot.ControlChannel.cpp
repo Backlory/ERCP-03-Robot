@@ -9,7 +9,7 @@
 namespace ercp {
 
 YunSBot::_control_channel::_control_channel(YunSBot &p,
-                                            protocol::v2::Source channel_source,
+                                            protocol::v3::Source channel_source,
                                             std::string remote_address,
                                             std::uint16_t status_port,
                                             std::uint16_t control_port,
@@ -25,7 +25,7 @@ YunSBot::_control_channel::_control_channel(YunSBot &p,
     const Poco::Net::SocketAddress statusAddress(remote_address, status_port);
     client.connect(statusAddress);
     ROBOT_INFO(GetSettings().Basic.Verbose() > 0,
-               fmt::format("Robot V2 status target {}", statusAddress.toString()))
+               fmt::format("Robot V3 status target {}", statusAddress.toString()))
 
     // M4: 31002 (non-loopback) only accepts datagrams from the configured peer
     // (basic.master); 31004 stays loopback-bound and needs no source filter.
@@ -40,7 +40,7 @@ YunSBot::_control_channel::_control_channel(YunSBot &p,
     server = std::make_shared<UdpServer>(handlers, controlAddress);
     last_stats_log_ = std::chrono::steady_clock::now();
     ROBOT_INFO(GetSettings().Basic.Verbose() > 0,
-               fmt::format("Robot V2 control bind {}", server->address().toString()))
+               fmt::format("Robot V3 control bind {}", server->address().toString()))
 }
 
 void YunSBot::_control_channel::processData(char *buf)
@@ -56,7 +56,7 @@ void YunSBot::_control_channel::processData(char *buf)
                 ROBOT_ERROR(
                     GetSettings().Basic.Verbose() > 0,
                     fmt::format(
-                        "Robot V2 control datagram dropped: unexpected peer {} (expected {})",
+                        "Robot V3 control datagram dropped: unexpected peer {} (expected {})",
                         sender.toString(),
                         expected_peer_.toString()))
                 last_peer_drop_log_ = dropNow;
@@ -76,7 +76,7 @@ void YunSBot::_control_channel::processData(char *buf)
         const auto stats = receiver.Stats();
         ROBOT_INFO(
             true,
-            fmt::format("Robot V2 command stats source={} received={} accepted={} rejected={} "
+            fmt::format("Robot V3 command stats source={} received={} accepted={} rejected={} "
                         "duplicate={} out_of_order={} sequence_gaps={} max_consecutive_gap={} "
                         "session_restarts={} last_session={} last_sequence={}",
                         static_cast<std::uint16_t>(source),
@@ -104,25 +104,25 @@ bool YunSBot::_control_channel::IsOnline(double overtime) const
     return receiver.IsOnline(overtime);
 }
 
-bool YunSBot::_control_channel::GetCommand(protocol::v2::ControlPayload &command,
-                                           robot_udp_v2::CommandMetadata &metadata,
+bool YunSBot::_control_channel::GetCommand(protocol::v3::ControlPayload &command,
+                                           robot_udp_v3::CommandMetadata &metadata,
                                            double overtime) const
 {
     return receiver.TryGet(command, metadata, overtime);
 }
 
-bool YunSBot::_control_channel::LatestCommand(protocol::v2::ControlPayload &command,
-                                              robot_udp_v2::CommandMetadata &metadata) const
+bool YunSBot::_control_channel::LatestCommand(protocol::v3::ControlPayload &command,
+                                              robot_udp_v3::CommandMetadata &metadata) const
 {
     return receiver.Latest(command, metadata);
 }
 
-robot_udp_v2::ReceiveStats YunSBot::_control_channel::Stats() const
+robot_udp_v3::ReceiveStats YunSBot::_control_channel::Stats() const
 {
     return receiver.Stats();
 }
 
-int YunSBot::_control_channel::SendStatus(const protocol::v2::Bytes &data)
+int YunSBot::_control_channel::SendStatus(const protocol::v3::Bytes &data)
 {
     try {
         return client.sendBytes(const_cast<std::uint8_t *>(data.data()),

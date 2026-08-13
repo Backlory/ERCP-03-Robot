@@ -10,12 +10,15 @@
 #include <thread>
 #include <vector>
 
+#include "protocol/robot_udp_v3.hpp"
+#include "robot_udp_v3_runtime.hpp"
 #include "protocol/robot_udp_v2.hpp"
-#include "robot_udp_v2_runtime.hpp"
 #include "beckhoff_feedback_layout.hpp"
+#include "beckhoff_snapshot_policy.hpp"
+#include "control_cycle_policy.hpp"
 
-namespace protocol = ercp::protocol::v2;
-namespace runtime = ercp::robot_udp_v2;
+namespace protocol = ercp::protocol::v3;
+namespace runtime = ercp::robot_udp_v3;
 
 namespace {
 
@@ -365,6 +368,112 @@ void TestControlSourceSelection()
            "automatic mode selects the Cloud 31004 command source");
 }
 
+void TestControlCyclePolicy()
+{
+    using ercp::control_cycle::ChooseSource;
+    auto source = ChooseSource(false, true, true);
+    Expect(source.source == protocol::Source::Master && !source.master_override,
+           "manual control always selects Master without an override");
+    source = ChooseSource(true, true, false);
+    Expect(source.source == protocol::Source::Cloud && !source.master_override,
+           "automatic control selects Cloud when Master is idle");
+    source = ChooseSource(true, true, true);
+    Expect(source.source == protocol::Source::Master && source.master_override,
+           "a recent Master command overrides automatic Cloud control");
+
+    auto control = SampleControl();
+    control.robot_action = 3;
+    control.ercp_switches = 0x001F;
+    control.ercp_6d.fill(0.5);
+    control.inject_velocity = {0.25, 0.75};
+    control.inject_position = {0.1, 0.9};
+    control.inject_enables = 0x0003;
+    device::beckhoff::BeckhoffSnapshot snapshot;
+    snapshot.inject_state_02 = 11;
+
+    const auto allowed =
+        ercp::control_cycle::PrepareCommands(control, true, true, true, snapshot);
+    Expect(allowed.ercp_allowed && allowed.discrete.operate && allowed.discrete.cooperate,
+           "fresh commands pass the ERCP online/ready safety gate");
+    Expect(allowed.discrete.inject_enable[0] && !allowed.discrete.inject_enable[1],
+           "a completed injector is disabled while the other injector remains enabled");
+
+    const auto blocked =
+        ercp::control_cycle::PrepareCommands(control, true, true, false, snapshot);
+    Expect(!blocked.ercp_allowed && !blocked.discrete.operate &&
+               blocked.discrete.handle_6d[0] == 0 && !blocked.discrete.inject_enable[0],
+           "ERCP outputs are zeroed when the device is not ready");
+    Expect(blocked.safe_control.values[6] == 0 && blocked.safe_control.values[7] == 0 &&
+               blocked.safe_control.values[8] == 0 && blocked.safe_control.values[9] == 0,
+           "ERCP motion axes are zeroed by the same safety gate");
+
+    const auto follow = ercp::control_cycle::ToFollowCommand(allowed.safe_control);
+    Expect(follow.follow_comp_botton == 1.0 && follow.vel_move == -1.0 &&
+               follow.vel_cutter_feed == 1.0 && follow.vel_wire_feed == -1.0,
+           "continuous controls are clamped while mapping to the PLC command");
+    const auto applied = ercp::control_cycle::ToAppliedControl(follow, allowed.discrete);
+    Expect(applied.values[0] == 1.0 && applied.values[1] == -1.0 &&
+               applied.robot_action == 3 && applied.inject_enables == 0x0001,
+           "applied-command audit data reflects the exact safe PLC command");
+
+    Expect(ercp::control_cycle::ClassifyApplyResult(true, 0) ==
+                   protocol::ApplyResult::Succeeded &&
+               ercp::control_cycle::ClassifyApplyResult(false, 0) ==
+                   protocol::ApplyResult::TimedOutToZero &&
+               ercp::control_cycle::ClassifyApplyResult(false, 0x701) ==
+                   protocol::ApplyResult::Failed,
+           "ADS failure takes precedence over fresh and timeout classifications");
+}
+
+void TestBeckhoffSnapshotPolicy()
+{
+    device::beckhoff::BeckhoffSnapshot snapshot;
+    snapshot.stale_groups = device::beckhoff::SnapshotCommon;
+    device::beckhoff::MarkSnapshotGroup(snapshot,
+                                        device::beckhoff::SnapshotCommon,
+                                        0,
+                                        true,
+                                        1234);
+    Expect((snapshot.valid_groups & device::beckhoff::SnapshotCommon) != 0 &&
+               (snapshot.stale_groups & device::beckhoff::SnapshotCommon) == 0 &&
+               snapshot.sampled_at_unix_ns[0] == 1234,
+           "a partially successful group becomes valid and fresh");
+
+    device::beckhoff::MarkSnapshotGroup(snapshot,
+                                        device::beckhoff::SnapshotErcpState,
+                                        2,
+                                        false,
+                                        9999);
+    Expect((snapshot.stale_groups & device::beckhoff::SnapshotErcpState) != 0 &&
+               snapshot.sampled_at_unix_ns[2] == 0,
+           "a fully failed group becomes stale without inventing a sample time");
+
+    snapshot.valid_groups |= device::beckhoff::SnapshotErcpState |
+                             device::beckhoff::SnapshotErcpFeedback;
+    snapshot.stale_groups |= device::beckhoff::SnapshotErcpFeedback;
+    snapshot.ercp_flags = 0xFFFF;
+    snapshot.sampled_at_unix_ns[2] = 1;
+    snapshot.sampled_at_unix_ns[3] = 2;
+    device::beckhoff::ClearOptionalErcpGroups(snapshot);
+    Expect((snapshot.valid_groups & (device::beckhoff::SnapshotErcpState |
+                                     device::beckhoff::SnapshotErcpFeedback)) == 0 &&
+               snapshot.ercp_flags == 0 && snapshot.sampled_at_unix_ns[2] == 0 &&
+               snapshot.sampled_at_unix_ns[3] == 0,
+           "an unavailable optional ERCP device clears only its optional groups");
+
+    snapshot.overall_ads_error = 0;
+    snapshot.consecutive_failed_polls = 7;
+    device::beckhoff::FinalizeSnapshotPoll(snapshot, 2000);
+    Expect(snapshot.connection_state == device::beckhoff::SnapshotConnectionState::Running &&
+               snapshot.consecutive_failed_polls == 0 && snapshot.published_unix_ns == 2000,
+           "a successful poll restores the running connection state");
+    snapshot.overall_ads_error = 0x701;
+    device::beckhoff::FinalizeSnapshotPoll(snapshot, 3000);
+    Expect(snapshot.connection_state == device::beckhoff::SnapshotConnectionState::Degraded &&
+               snapshot.consecutive_failed_polls == 1 && snapshot.published_unix_ns == 3000,
+           "a failed poll increments diagnostics and degrades the connection state");
+}
+
 // ===================== shared-wire 黄金字节测试 =====================
 // 固定输入约定与 shared-wire/golden_gen/golden_gen.cpp 逐字面一致(fix_plan.md §3.5)。
 
@@ -695,7 +804,9 @@ void TestGoldenStatusFixture()
 
 int main()
 {
-    std::cout << "kRobotUdpV2SyncVersion = " << protocol::kRobotUdpV2SyncVersion << '\n';
+    static_assert(protocol::kRobotUdpV2SyncVersion == protocol::kRobotUdpV3SyncVersion,
+                  "V2 compatibility entry must forward to V3");
+    std::cout << "kRobotUdpV3SyncVersion = " << protocol::kRobotUdpV3SyncVersion << '\n';
 
     TestBeckhoffFeedbackLeaves();
     TestCodec();
@@ -704,13 +815,15 @@ int main()
     TestV2OnlyAndFreshness();
     TestAppliedCommandTracking();
     TestControlSourceSelection();
+    TestControlCyclePolicy();
+    TestBeckhoffSnapshotPolicy();
     TestGoldenControlFixture();
     TestGoldenStatusFixture();
 
     if (failures != 0) {
-        std::cerr << failures << " Robot UDP V2 regression test(s) failed\n";
+        std::cerr << failures << " Robot UDP V3 regression test(s) failed\n";
         return 1;
     }
-    std::cout << "Robot UDP V2 regression tests passed\n";
+    std::cout << "Robot UDP V3 regression tests passed\n";
     return 0;
 }

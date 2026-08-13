@@ -1,12 +1,14 @@
 ﻿#pragma once
 #include <array>
 #include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <iostream>
 #include <map>
 #include <mutex>
+#include <string>
 #include <vector>
 #include <set>
 #include <fmt/format.h>
@@ -135,6 +137,13 @@ private:
 
     // 更新状态线程
     void StateUpdateThread();
+    void PollCommonSnapshot(BeckhoffSnapshot &next, std::string &lastFailureDetails);
+    void PollErcpSnapshot(BeckhoffSnapshot &next,
+                          std::chrono::steady_clock::time_point cycleStarted,
+                          std::chrono::steady_clock::time_point &nextProbe);
+    std::uint32_t PollErcpState(BeckhoffSnapshot &next);
+    std::uint32_t PollErcpFeedback(BeckhoffSnapshot &next);
+    void PublishSnapshot(BeckhoffSnapshot next);
     boost::shared_ptr<boost::thread> m_StateUpdate_Thread;
 
     mutable std::mutex m_snapshot_mutex;

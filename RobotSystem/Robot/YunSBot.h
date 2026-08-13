@@ -1,4 +1,6 @@
 ﻿#pragma once
+#include <cstddef>
+#include <future>
 #include <boost/asio.hpp>
 #include <boost/signals2.hpp>
 #include <tbb/concurrent_map.h>
@@ -11,7 +13,7 @@ using UdpServer = Poco::Net::UDPServer;
 
 #include "utils.h"
 #include "robot_config.h"
-#include "robot_udp_v2_runtime.hpp"
+#include "robot_udp_v3_runtime.hpp"
 #include "yunsbot_config.h"
 
 namespace task {
@@ -112,6 +114,15 @@ public:
         std::shared_ptr<task::SequentialTasks<>> DeinitTasks;
 
     private:
+        bool WaitForLifecycleTask();
+        bool ExecuteStart(std::size_t totalAttempts);
+        bool RunStartTasks(std::size_t totalAttempts);
+        bool ExecuteStop();
+        void LogTaskError(const std::exception_ptr &error) const;
+        void RunPeriodicLoop(const char *threadName,
+                             double intervalSeconds,
+                             boost::signals2::signal<void(double)> &callback);
+
         boost::shared_ptr<boost::thread> m_bg_worker = nullptr;
         boost::signals2::signal<void(double)> OnBackground;
 
@@ -126,7 +137,7 @@ public:
         std::shared_ptr<ilsr::Logger> m_logger;
         std::shared_ptr<ilsr::Logger> m_FRecord; // 测试记录力反馈电压值
 
-        robot_udp_v2::AppliedCommandTracker m_applied_commands;
+        robot_udp_v3::AppliedCommandTracker m_applied_commands;
         // Task 11: Master 强制优先仲裁开关(默认启用,构造时从 basic.master_priority 读)
         // 与 Cloud 命令因仲裁被丢弃的累计计数(联调统计)。
         std::atomic<bool> m_master_priority{true};
@@ -144,14 +155,11 @@ public:
         //            void ControlRunnable(double t);
         void ControlRunnable2(double t);
 
-        void build_follow_cmd(const protocol::v2::ControlPayload &cmd,
-                              beckhoff_follow_cmd &follow_cmd);
-
-        protocol::v2::AppliedCommandPayload AppliedCommands() const;
-        protocol::v2::Source ActiveSource() const;
+        protocol::v3::AppliedCommandPayload AppliedCommands() const;
+        protocol::v3::Source ActiveSource() const;
         std::uint64_t AcceptedCommandReceivedUnixNs() const;
         std::uint64_t LifecycleChangedUnixNs() const;
-        protocol::v2::Bytes BuildStatusPacket();
+        protocol::v3::Bytes BuildStatusPacket();
 
         YunSBot &parent;
     } base;
@@ -165,17 +173,17 @@ public:
 
     public:
         bool IsOnline(double overtime = 0.1) const;
-        bool GetCommand(protocol::v2::ControlPayload &cmd,
-                        robot_udp_v2::CommandMetadata &metadata,
+        bool GetCommand(protocol::v3::ControlPayload &cmd,
+                        robot_udp_v3::CommandMetadata &metadata,
                         double overtime = 0.1) const;
-        bool LatestCommand(protocol::v2::ControlPayload &cmd,
-                           robot_udp_v2::CommandMetadata &metadata) const;
-        robot_udp_v2::ReceiveStats Stats() const;
-        int SendStatus(const protocol::v2::Bytes &data);
+        bool LatestCommand(protocol::v3::ControlPayload &cmd,
+                           robot_udp_v3::CommandMetadata &metadata) const;
+        robot_udp_v3::ReceiveStats Stats() const;
+        int SendStatus(const protocol::v3::Bytes &data);
 
     protected:
         _control_channel(YunSBot &p,
-                         protocol::v2::Source source,
+                         protocol::v3::Source source,
                          std::string remote_address,
                          std::uint16_t status_port,
                          std::uint16_t control_port,
@@ -184,8 +192,8 @@ public:
 
     private:
         YunSBot &parent;
-        const protocol::v2::Source source;
-        robot_udp_v2::CommandReceiver receiver;
+        const protocol::v3::Source source;
+        robot_udp_v3::CommandReceiver receiver;
 
         UdpClient client;
         std::shared_ptr<UdpServer> server;
