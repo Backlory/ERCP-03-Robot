@@ -1025,8 +1025,8 @@ void Beckhoff_Motor::PublishSnapshot(BeckhoffSnapshot next)
     m_snapshot = next;
 }
 
-// Poll scheduling is intentionally small. Symbol plans and snapshot mapping
-// live in the focused methods above so they can evolve independently.
+// 状态轮询线程：按固定周期读取公共状态和 ERCP 状态，
+// 汇总 ADS 诊断信息后发布一致的 Beckhoff 快照。
 void Beckhoff_Motor::StateUpdateThread()
 {
     auto nextErcpProbe = std::chrono::steady_clock::now();
