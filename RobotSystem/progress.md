@@ -25,6 +25,6 @@
 - 已删除 320 字节父结构布局、`DecodeRobotFeedbackBlock`、在线父结构校验和双路径回退；`ReadDataBatch` 支持跳过缺失句柄后继续读取有效项。
 - 已增加连接内 `ADS_SYMBOL_NOT_FOUND` 负结果缓存，避免旧版缺失数组元素在 20 ms 轮询中重复申请句柄；重连时清空缓存。
 - 已同步更新接口探针和静态契约测试；本地旧版叶子缺失模拟验证了成功字段保留、失败字段 unavailable。
-- 最终验证通过：静态契约检查、`RobotUdpV2Regression.exe`、`robot_device.dll` 构建和 `BeckhoffInterfaceProbe.exe` 构建。
+- 最终验证通过：静态契约检查、`RobotUdpV3Regression.exe`、`robot_device.dll` 构建和 `BeckhoffInterfaceProbe.exe` 构建。
 - `robot_device` 首次构建曾被 vcpkg 用户属性权限阻断，改用显式 `VCLibPackagePath` 绕过该本机环境问题后构建成功；未修改该用户文件。
 - 全程未修改 Beckhoff 工程；未改写入路径、UDP 协议或启动门控逻辑。

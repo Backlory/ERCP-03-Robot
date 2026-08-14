@@ -1,4 +1,2 @@
-/include/include/protocol/robot_udp_v2.hpp -text
 /include/include/protocol/robot_udp_v3.hpp -text
-/include/include/net/helper.hpp -text
-/tests/RobotUdpV2Regression/golden/*.hex -text
+/tests/RobotUdpV3Regression/golden/*.hex -text

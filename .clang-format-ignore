@@ -1,5 +1,3 @@
 3rdparty/**
 plugins/lib/drivers/dep/**
-include/include/net/helper.hpp
-include/include/protocol/robot_udp_v2.hpp
 include/include/protocol/robot_udp_v3.hpp

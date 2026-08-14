@@ -42,12 +42,6 @@
     <ClInclude Include="..\include\include\protocol\robot_udp_v3.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
-    <ClInclude Include="..\include\include\robot_udp_v2_runtime.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="..\include\include\protocol\robot_udp_v2.hpp">
-      <Filter>头文件</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp">

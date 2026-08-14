@@ -24,15 +24,16 @@ V3 完整命令包固定为 224B，payload 为 176B。它可以承载：
 - ERCP operate/cooperate、6D handle、3 buttons；
 - 双注射器速度、目标位置和使能。
 
-V3 与 V2 的 major version、包长和字段布局都不同。Master 与 Robot 必须同步升级；
-V2/V3 混部会被双方的严格解码器拒绝。
+V3 只接受 major version=3、固定包长和固定字段布局；任何版本、长度或字段布局
+不一致的输入都会被严格解码器拒绝。
 
 ## 当前生产 ADS 契约
 
 `260729-开发人员通信协议金标准.md` 是目标接口描述，不是现有生产 TwinCAT
 工程已经部署该接口的证据。当前代码唯一可静态验证的生产 ADS 基线是：
 
-`04-simulator/beckhoff-GT/生产线上的beckhoff驱动`
+生产 ADS 符号表和 ABI 由 Robot 部署环境提供；当前仓库只保留静态协议与边界验证，
+不依赖已删除的 simulator 工程。
 
 因此 Robot 必须保持以下边界：
 

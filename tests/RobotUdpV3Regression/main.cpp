@@ -12,7 +12,6 @@
 
 #include "protocol/robot_udp_v3.hpp"
 #include "robot_udp_v3_runtime.hpp"
-#include "protocol/robot_udp_v2.hpp"
 #include "beckhoff_feedback_layout.hpp"
 #include "beckhoff_snapshot_policy.hpp"
 #include "control_cycle_policy.hpp"
@@ -306,10 +305,10 @@ void TestSequenceAndSessions()
 }
 
 /**
- * @brief 验证 V2 兼容入口、非法 datagram 拒绝以及命令新鲜度窗口。
- * @details 先确认旧 native-layout 不被误接受，再确认 V2 控制包可用且过期/畸形包会更新统计。
+ * @brief 验证 V3 非法 datagram 拒绝以及命令新鲜度窗口。
+ * @details 先确认旧 native-layout 不被误接受，再确认 V3 控制包可用且过期/畸形包会更新统计。
  */
-void TestV2OnlyAndFreshness()
+void TestMalformedDatagramsAndFreshness()
 {
     runtime::CommandReceiver receiver(protocol::Source::Cloud);
     std::string error;
@@ -323,14 +322,14 @@ void TestV2OnlyAndFreshness()
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
     Expect(!receiver.TryGet(payload, metadata, 0.001), "missing command is unavailable");
 
-    auto v2 = ControlPacket(protocol::Source::Cloud, 50, 0);
-    Expect(receiver.AcceptDatagram(v2.data(), v2.size(), &error), "V2 command is accepted");
-    Expect(receiver.TryGet(payload, metadata, 1.0), "fresh V2 command is available");
+    auto v3 = ControlPacket(protocol::Source::Cloud, 50, 0);
+    Expect(receiver.AcceptDatagram(v3.data(), v3.size(), &error), "V3 command is accepted");
+    Expect(receiver.TryGet(payload, metadata, 1.0), "fresh V3 command is available");
 
-    auto malformedV2 = v2;
-    malformedV2[5] = 3;
-    Expect(!receiver.AcceptDatagram(malformedV2.data(), malformedV2.size(), &error),
-           "invalid V2 version is rejected");
+    auto malformedV3 = v3;
+    malformedV3[5] = 3;
+    Expect(!receiver.AcceptDatagram(malformedV3.data(), malformedV3.size(), &error),
+           "invalid V3 version is rejected");
 
     const std::uint8_t junk[3] = {1, 2, 3};
     const auto before = receiver.Stats();
@@ -511,7 +510,7 @@ void TestBeckhoffSnapshotPolicy()
 }
 
 // ===================== shared-wire 黄金字节测试 =====================
-// 固定输入约定与 shared-wire/golden_gen/golden_gen.cpp 逐字面一致(fix_plan.md §3.5)。
+// 固定输入约定与 shared-wire/golden_gen/golden_gen.cpp 逐字面一致。
 
 std::uint64_t PU(std::size_t offset)
 {
@@ -546,8 +545,8 @@ protocol::Bytes LoadGoldenHex(const std::string &name, std::string &usedPath)
     std::string prefix;
     for (int depth = 0; depth < 7; ++depth) {
         candidates.push_back(prefix + "golden/" + name);
-        candidates.push_back(prefix + "tests/RobotUdpV2Regression/golden/" + name);
-        candidates.push_back(prefix + "03-Robot/tests/RobotUdpV2Regression/golden/" + name);
+        candidates.push_back(prefix + "tests/RobotUdpV3Regression/golden/" + name);
+        candidates.push_back(prefix + "03-Robot/tests/RobotUdpV3Regression/golden/" + name);
         prefix += "../";
     }
     for (const auto &candidate : candidates) {
@@ -868,15 +867,13 @@ void TestGoldenStatusFixture()
  */
 int main()
 {
-    static_assert(protocol::kRobotUdpV2SyncVersion == protocol::kRobotUdpV3SyncVersion,
-                  "V2 compatibility entry must forward to V3");
     std::cout << "kRobotUdpV3SyncVersion = " << protocol::kRobotUdpV3SyncVersion << '\n';
 
     TestBeckhoffFeedbackLeaves();
     TestCodec();
     TestFullStatus();
     TestSequenceAndSessions();
-    TestV2OnlyAndFreshness();
+    TestMalformedDatagramsAndFreshness();
     TestAppliedCommandTracking();
     TestControlSourceSelection();
     TestControlCyclePolicy();

@@ -1,6 +1,6 @@
 ﻿// [SHARED-WIRE] Robot UDP V3 C++ protocol canonical source.
 // 该规则适用于分发副本；本文件路径是 C++ 协议定义的唯一权威源。
-// SYNC-SOURCE : 01-Cloud-cmake/include/shared_wire/robot_udp_v3.hpp
+// SYNC-SOURCE : shared-wire/robot_udp_v3.hpp
 // SYNC-VERSION: 6
 // SYNC-RULE   : 修改后运行 tools/robot_udp_v3_sync.ps1，再执行三端黄金测试。
 #pragma once
@@ -71,6 +71,8 @@ enum class ControlValueIndex : std::size_t {
     Count = 10,
 };
 
+// Convert the semantic control-value index into the stable array offset used by
+// both the C++ adapters and the byte-level control encoder.
 constexpr std::size_t controlIndex(ControlValueIndex value)
 {
     return static_cast<std::size_t>(value);
@@ -274,6 +276,8 @@ struct FullStatusPayload {
 
 namespace detail {
 
+// Store a human-readable failure reason when requested and return false so all
+// protocol validators can use the same early-exit convention.
 inline bool fail(std::string *error, const char *message)
 {
     if (error != nullptr) {
@@ -284,16 +288,20 @@ inline bool fail(std::string *error, const char *message)
 
 class Writer {
 public:
+    // Bind the writer to an output byte vector; the vector remains owned by the caller.
     explicit Writer(Bytes &bytes) : bytes_(bytes) {}
 
+    // Append one unsigned byte without changing its value or byte order.
     void u8(std::uint8_t value) { bytes_.push_back(value); }
 
+    // Append a 16-bit unsigned integer in network (big-endian) order.
     void u16(std::uint16_t value)
     {
         bytes_.push_back(static_cast<std::uint8_t>(value >> 8));
         bytes_.push_back(static_cast<std::uint8_t>(value));
     }
 
+    // Append a 32-bit unsigned integer in network (big-endian) order.
     void u32(std::uint32_t value)
     {
         bytes_.push_back(static_cast<std::uint8_t>(value >> 24));
@@ -302,6 +310,7 @@ public:
         bytes_.push_back(static_cast<std::uint8_t>(value));
     }
 
+    // Append a 64-bit unsigned integer in network (big-endian) order.
     void u64(std::uint64_t value)
     {
         for (int shift = 56; shift >= 0; shift -= 8) {
@@ -309,9 +318,12 @@ public:
         }
     }
 
+    // Reinterpret signed integers as two's-complement bit patterns and reuse
+    // the unsigned big-endian writers.
     void i16(std::int16_t value) { u16(static_cast<std::uint16_t>(value)); }
     void i32(std::int32_t value) { u32(static_cast<std::uint32_t>(value)); }
 
+    // Copy the IEEE-754 binary64 bits into the protocol's big-endian byte order.
     void f64(double value)
     {
         std::uint64_t bits = 0;
@@ -320,6 +332,7 @@ public:
         u64(bits);
     }
 
+    // Append an arbitrary byte range, including an intentional no-op for size zero.
     void bytes(const std::uint8_t *data, std::size_t size)
     {
         if (size != 0) bytes_.insert(bytes_.end(), data, data + size);
@@ -331,8 +344,10 @@ private:
 
 class Reader {
 public:
+    // Create a bounded reader over an existing byte range; no ownership is taken.
     Reader(const std::uint8_t *data, std::size_t size) : data_(data), size_(size) {}
 
+    // Read one unsigned byte if the bounded input still contains it.
     bool u8(std::uint8_t &value)
     {
         if (!require(1)) return false;
@@ -340,6 +355,7 @@ public:
         return true;
     }
 
+    // Read a big-endian 16-bit unsigned integer without advancing on truncation.
     bool u16(std::uint16_t &value)
     {
         if (!require(2)) return false;
@@ -349,6 +365,7 @@ public:
         return true;
     }
 
+    // Read a big-endian 32-bit unsigned integer without advancing on truncation.
     bool u32(std::uint32_t &value)
     {
         if (!require(4)) return false;
@@ -360,6 +377,7 @@ public:
         return true;
     }
 
+    // Read a big-endian 64-bit unsigned integer without advancing on truncation.
     bool u64(std::uint64_t &value)
     {
         if (!require(8)) return false;
@@ -371,6 +389,7 @@ public:
         return true;
     }
 
+    // Read a signed 16-bit value through the unsigned bit-preserving primitive.
     bool i16(std::int16_t &value)
     {
         std::uint16_t bits = 0;
@@ -379,6 +398,7 @@ public:
         return true;
     }
 
+    // Read a signed 32-bit value through the unsigned bit-preserving primitive.
     bool i32(std::int32_t &value)
     {
         std::uint32_t bits = 0;
@@ -387,6 +407,7 @@ public:
         return true;
     }
 
+    // Read an IEEE-754 binary64 value and reject NaN or infinity as invalid wire data.
     bool f64(double &value)
     {
         std::uint64_t bits = 0;
@@ -395,6 +416,7 @@ public:
         return std::isfinite(value);
     }
 
+    // Copy an exact byte range and advance only when the whole range is available.
     bool copy(Bytes &value, std::size_t size)
     {
         if (!require(size)) return false;
@@ -403,9 +425,11 @@ public:
         return true;
     }
 
+    // Return the number of unread bytes in the bounded input range.
     std::size_t remaining() const { return size_ - offset_; }
 
 private:
+    // Check a read length without changing the reader cursor.
     bool require(std::size_t count) const { return count <= remaining(); }
 
     const std::uint8_t *data_;
@@ -413,6 +437,8 @@ private:
     std::size_t offset_ = 0;
 };
 
+// Enforce the direction contract: Master/Cloud may issue control, while only
+// Robot may publish status snapshots.
 inline bool validSourceFor(MessageType type, Source source)
 {
     if (type == MessageType::RobotControl) {
@@ -439,6 +465,7 @@ inline bool validHeader(const Header &header, MessageType expected, std::string 
     return true;
 }
 
+// Reject control switch bits that are not assigned by the current V3 schema.
 inline bool validSwitches(std::uint16_t switches, std::string *error)
 {
     return (switches & static_cast<std::uint16_t>(~0x003Fu)) == 0
@@ -452,14 +479,19 @@ inline bool validSwitches(std::uint16_t switches, std::string *error)
  */
 inline bool validControl(const ControlPayload &payload, std::string *error)
 {
+    // Stage 1: validate all switch masks and the bounded robot action enum.
     if (!validSwitches(payload.switches, error)) return false;
     if ((payload.ercp_switches & ~0x001Fu) != 0
         || (payload.inject_enables & ~0x0003u) != 0
         || payload.robot_action < -1 || payload.robot_action > 3) {
         return fail(error, "unknown ERCP control bit");
     }
+    // Stage 2: reject non-finite continuous control values before they enter the
+    // fixed-width binary64 encoding.
     for (double value : payload.values) if (!std::isfinite(value)) return fail(error, "non-finite control value");
     for (double value : payload.ercp_6d) if (!std::isfinite(value)) return fail(error, "non-finite ERCP 6D value");
+
+    // Stage 3: injection speed and position are normalized to the [0,1] range.
     for (double value : payload.inject_velocity)
         if (!std::isfinite(value) || value < 0.0 || value > 1.0)
             return fail(error, "inject velocity outside [0,1]");
@@ -469,11 +501,14 @@ inline bool validControl(const ControlPayload &payload, std::string *error)
     return true;
 }
 
+// Read a 16-bit big-endian integer from a validated byte offset. Callers invoke
+// this only after the containing group length has already been checked.
 inline std::uint16_t be16(const Bytes &bytes, std::size_t offset)
 {
     return static_cast<std::uint16_t>((bytes[offset] << 8) | bytes[offset + 1]);
 }
 
+// Read a 32-bit big-endian integer from a validated byte offset.
 inline std::uint32_t be32(const Bytes &bytes, std::size_t offset)
 {
     return (static_cast<std::uint32_t>(bytes[offset]) << 24)
@@ -482,6 +517,8 @@ inline std::uint32_t be32(const Bytes &bytes, std::size_t offset)
         | static_cast<std::uint32_t>(bytes[offset + 3]);
 }
 
+// Return true only when the requested byte interval is entirely zero. This is
+// used for reserved and extension fields that must not acquire new semantics.
 inline bool allZero(const Bytes &bytes, std::size_t offset, std::size_t size)
 {
     for (std::size_t i = offset; i < offset + size; ++i) {
@@ -490,6 +527,7 @@ inline bool allZero(const Bytes &bytes, std::size_t offset, std::size_t size)
     return true;
 }
 
+// Interpret eight bytes as binary64 and verify that the resulting value is finite.
 inline bool finiteF64(const Bytes &bytes, std::size_t offset)
 {
     std::uint64_t bits = 0;
@@ -788,6 +826,8 @@ inline bool encodeStatus(const Header &header, const std::vector<StatusGroup> &g
     return output.size() == kHeaderSize + payloadSize;
 }
 
+// Encode only a complete eight-group status directory and preserve the fixed
+// 1200-byte RobotStatus contract.
 inline bool encodeFullStatus(const Header &header, const std::vector<StatusGroup> &groups, Bytes &output,
     std::string *error = nullptr)
 {
@@ -843,6 +883,7 @@ inline bool decodeStatus(const std::uint8_t *data, std::size_t size, StatusMessa
     return true;
 }
 
+// Decode a packet and require that its directory contains every known status group.
 inline bool decodeFullStatus(const std::uint8_t *data, std::size_t size, StatusMessage &message,
     std::string *error = nullptr)
 {
@@ -852,6 +893,7 @@ inline bool decodeFullStatus(const std::uint8_t *data, std::size_t size, StatusM
 
 namespace detail {
 
+// Construct a status-group value while transferring ownership of its payload bytes.
 inline StatusGroup group(GroupId id, std::uint64_t sampledAt, Bytes payload)
 {
     StatusGroup result;
@@ -921,6 +963,7 @@ inline bool readAppliedCommand(Reader &reader, AppliedCommandRecord &record)
     return true;
 }
 
+// Find the first group with the requested known ID without copying its payload.
 inline const StatusGroup *findGroup(const StatusMessage &message, GroupId id)
 {
     const auto rawId = static_cast<std::uint16_t>(id);
@@ -1043,6 +1086,8 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
     return groups;
 }
 
+// Build the canonical eight groups from a domain snapshot, then encode them using
+// the same path as callers that already hold StatusGroup values.
 inline bool encodeFullStatus(const Header &header, const FullStatusPayload &status, Bytes &output,
     std::string *error = nullptr)
 {
@@ -1176,6 +1221,8 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
     return true;
 }
 
+// Decode a complete status packet and map its validated groups into the domain
+// snapshot, returning the decoded wire header to the caller.
 inline bool decodeFullStatus(const std::uint8_t *data, std::size_t size, Header &header,
     FullStatusPayload &status, std::string *error = nullptr)
 {
