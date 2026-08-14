@@ -63,11 +63,6 @@ void CommandReceiver::RecordRejected()
     ++stats_.rejected;
 }
 
-bool CommandReceiver::AcceptDatagram(const std::uint8_t *data, std::size_t size, std::string *error)
-{
-    return Accept(data, size, error);
-}
-
 /**
  * @brief 功能：验证并接收一份 Robot V3 控制 UDP 数据报。
  * @details 机制：按长度、协议头、来源、session/sequence 顺序和控制载荷语义逐层校验，成功后更新最新命令与接收统计。

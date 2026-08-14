@@ -313,7 +313,7 @@ void TestMalformedDatagramsAndFreshness()
     runtime::CommandReceiver receiver(protocol::Source::Cloud);
     std::string error;
     const std::vector<std::uint8_t> legacyBytes(152, 0);
-    Expect(!receiver.AcceptDatagram(legacyBytes.data(), legacyBytes.size(), &error),
+    Expect(!receiver.Accept(legacyBytes.data(), legacyBytes.size(), &error),
            "native-layout command packet is rejected");
 
     protocol::ControlPayload payload;
@@ -323,17 +323,17 @@ void TestMalformedDatagramsAndFreshness()
     Expect(!receiver.TryGet(payload, metadata, 0.001), "missing command is unavailable");
 
     auto v3 = ControlPacket(protocol::Source::Cloud, 50, 0);
-    Expect(receiver.AcceptDatagram(v3.data(), v3.size(), &error), "V3 command is accepted");
+    Expect(receiver.Accept(v3.data(), v3.size(), &error), "V3 command is accepted");
     Expect(receiver.TryGet(payload, metadata, 1.0), "fresh V3 command is available");
 
     auto malformedV3 = v3;
     malformedV3[5] = 3;
-    Expect(!receiver.AcceptDatagram(malformedV3.data(), malformedV3.size(), &error),
+    Expect(!receiver.Accept(malformedV3.data(), malformedV3.size(), &error),
            "invalid V3 version is rejected");
 
     const std::uint8_t junk[3] = {1, 2, 3};
     const auto before = receiver.Stats();
-    Expect(!receiver.AcceptDatagram(junk, sizeof(junk), &error), "unsupported datagram rejected");
+    Expect(!receiver.Accept(junk, sizeof(junk), &error), "unsupported datagram rejected");
     const auto after = receiver.Stats();
     Expect(after.received == before.received + 1 && after.rejected == before.rejected + 1,
            "unsupported datagram is counted");

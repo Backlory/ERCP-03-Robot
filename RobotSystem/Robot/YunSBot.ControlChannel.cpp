@@ -77,7 +77,7 @@ void YunSBot::_control_channel::processData(char *buf)
     const auto *bytes = reinterpret_cast<const std::uint8_t *>(payload(buf));
 
     std::string error;
-    receiver.AcceptDatagram(bytes, size, &error);
+    receiver.Accept(bytes, size, &error);
 
     const auto now = std::chrono::steady_clock::now();
     if (GetSettings().Basic.Verbose() > 0 && now - last_stats_log_ >= std::chrono::seconds(60)) {

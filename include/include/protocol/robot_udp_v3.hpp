@@ -1,7 +1,7 @@
-﻿// [SHARED-WIRE] Robot UDP V3 C++ protocol canonical source.
+// [SHARED-WIRE] Robot UDP V3 C++ protocol canonical source.
 // 该规则适用于分发副本；本文件路径是 C++ 协议定义的唯一权威源。
 // SYNC-SOURCE : shared-wire/robot_udp_v3.hpp
-// SYNC-VERSION: 6
+// SYNC-VERSION: 7
 // SYNC-RULE   : 修改后运行 tools/robot_udp_v3_sync.ps1，再执行三端黄金测试。
 #pragma once
 
@@ -17,7 +17,7 @@
 namespace ercp::protocol::v3 {
 
 // 同步版本号:与文件头 SYNC-VERSION 保持一致;黄金测试将其打印进输出,供人工比对各端副本版本。
-constexpr int kRobotUdpV3SyncVersion = 6;
+constexpr int kRobotUdpV3SyncVersion = 7;
 
 using Bytes = std::vector<std::uint8_t>;
 
@@ -782,6 +782,8 @@ inline bool isFullStatus(const std::vector<StatusGroup> &groups)
 /**
  * @brief 功能：把可变状态组集合编码为 RobotStatus UDP 包。
  * @details 机制：先检查组数量、重复 ID、每组 schema 和总长度，再写目录与载荷；完整状态额外保持 1200 字节 wire 契约。
+ * @note 可变组（非 8 组、未知扩展组）是保留能力：三端生产只发/收固定 8 组的完整状态
+ *       （encodeFullStatus / decodeFullStatus，C# 侧仅实现完整状态），生产不得使用非完整布局。
  */
 inline bool encodeStatus(const Header &header, const std::vector<StatusGroup> &groups, Bytes &output,
     std::string *error = nullptr)
@@ -838,6 +840,8 @@ inline bool encodeFullStatus(const Header &header, const std::vector<StatusGroup
 /**
  * @brief 功能：解析可变状态组目录和载荷并执行协议校验。
  * @details 机制：读取头和目录后逐组检查长度、重复 ID、已知组语义以及包尾消费情况，最终形成可供上层映射的 StatusMessage。
+ * @note 可变组解析是保留能力：三端生产只接收固定 8 组的完整状态（decodeFullStatus，
+ *       C# 侧死认 1200B/8 组），非完整布局仅作兼容/诊断保留，不作为生产契约。
  */
 inline bool decodeStatus(const std::uint8_t *data, std::size_t size, StatusMessage &message,
     std::string *error = nullptr)

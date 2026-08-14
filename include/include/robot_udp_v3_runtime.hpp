@@ -39,7 +39,6 @@ class CommandReceiver {
 public:
     explicit CommandReceiver(protocol::Source expected_source);
 
-    bool AcceptDatagram(const std::uint8_t *data, std::size_t size, std::string *error = nullptr);
     bool Accept(const std::uint8_t *data, std::size_t size, std::string *error = nullptr);
     void RecordRejected();
 

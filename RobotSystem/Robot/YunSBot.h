@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 #include <cstddef>
 #include <future>
 #include <boost/asio.hpp>
@@ -165,7 +165,7 @@ public:
     } base;
 
     /// <summary>
-    /// Master and Cloud V2 control/status channels.
+    /// Master and Cloud V3 control/status channels.
     /// </summary>
     struct _control_channel : public Poco::Net::UDPHandler {
 
