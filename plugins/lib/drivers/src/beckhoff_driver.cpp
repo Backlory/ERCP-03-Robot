@@ -48,6 +48,28 @@ bool AnySuccessful(const ErrorContainer &errors)
     });
 }
 
+template <typename RequestContainer, typename ErrorContainer>
+std::string FormatAdsReadFailures(const RequestContainer &requests,
+                                  std::size_t count,
+                                  const ErrorContainer &errors)
+{
+    std::ostringstream failures;
+    bool first = true;
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto error = errors[i];
+        if (error == ADSERR_NOERR)
+            continue;
+        if (!first)
+            failures << ", ";
+        failures << requests[i].name << "=0x" << std::uppercase << std::hex << error
+                 << std::nouppercase << std::dec;
+        if (error == ADSERR_DEVICE_SYMBOLNOTFOUND)
+            failures << "(ADS_SYMBOL_NOT_FOUND)";
+        first = false;
+    }
+    return failures.str();
+}
+
 constexpr std::size_t kMainMotorErrorCount = 19;
 constexpr std::size_t kCommonBaseRequestCount = 3 + kMainMotorErrorCount;
 constexpr std::size_t kCommonRequestCount =
@@ -907,21 +929,12 @@ void Beckhoff_Motor::PollCommonSnapshot(BeckhoffSnapshot &next,
         feedbackErrors[i] = itemErrors[feedbackStart + i];
 
     std::size_t successfulItems = 0;
-    std::ostringstream failures;
     for (std::size_t i = 0; i < requestCount; ++i) {
-        const auto error = itemErrors[i];
-        if (error == ADSERR_NOERR) {
+        if (itemErrors[i] == ADSERR_NOERR) {
             ++successfulItems;
-            continue;
         }
-        if (!failures.str().empty())
-            failures << ", ";
-        failures << requests[i].name << "=0x" << std::uppercase << std::hex << error
-                 << std::nouppercase << std::dec;
-        if (error == ADSERR_DEVICE_SYMBOLNOTFOUND)
-            failures << "(ADS_SYMBOL_NOT_FOUND)";
     }
-    const auto failureDetails = failures.str();
+    const auto failureDetails = FormatAdsReadFailures(requests, requestCount, itemErrors);
     if (!failureDetails.empty() && failureDetails != lastFailureDetails) {
         ROBOT_ERROR(true,
                     "Beckhoff Common leaf fields unavailable; publishing successful fields: "
@@ -951,7 +964,8 @@ void Beckhoff_Motor::PollCommonSnapshot(BeckhoffSnapshot &next,
  * @brief 功能：读取 ERCP 在线、就绪、错误位、类型和运动状态并填充状态组。
  * @details 机制：按固定请求索引映射每个字段，只有对应读取成功时才设置语义位，随后标记 ERCP 状态组的有效性。
  */
-std::uint32_t Beckhoff_Motor::PollErcpState(BeckhoffSnapshot &next)
+std::uint32_t Beckhoff_Motor::PollErcpState(BeckhoffSnapshot &next,
+                                            std::string &lastFailureDetails)
 {
     bool online = false;
     bool ready = false;
@@ -981,6 +995,15 @@ std::uint32_t Beckhoff_Motor::PollErcpState(BeckhoffSnapshot &next)
 
     std::array<std::uint32_t, requests.size()> errors{};
     const auto result = ReadDataBatch(requests.data(), requestCount, errors.data());
+    const auto failureDetails = FormatAdsReadFailures(requests, requestCount, errors);
+    if (!failureDetails.empty() && failureDetails != lastFailureDetails) {
+        ROBOT_ERROR(true,
+                    "Beckhoff ERCP state leaf fields unavailable; publishing successful fields: "
+                        << failureDetails)
+    } else if (result == ADSERR_NOERR && !lastFailureDetails.empty()) {
+        ROBOT_INFO(true, "Beckhoff ERCP state leaf reads recovered; all fields are readable.")
+    }
+    lastFailureDetails = failureDetails;
     next.ercp_state_ads_error = result;
     KeepFirstError(next.overall_ads_error, result);
     next.ercp_flags = static_cast<std::uint16_t>(
@@ -1010,7 +1033,8 @@ std::uint32_t Beckhoff_Motor::PollErcpState(BeckhoffSnapshot &next)
  * @brief 功能：读取 ERCP 力、位置、注入状态和球囊压力反馈。
  * @details 机制：一次批量提交 11 个叶字段，逐项按错误码选择真实值或安全零值，并更新 ERCP feedback 诊断组。
  */
-std::uint32_t Beckhoff_Motor::PollErcpFeedback(BeckhoffSnapshot &next)
+std::uint32_t Beckhoff_Motor::PollErcpFeedback(BeckhoffSnapshot &next,
+                                               std::string &lastFailureDetails)
 {
     double deliverForce = 0;
     double guideWireForce = 0;
@@ -1038,6 +1062,15 @@ std::uint32_t Beckhoff_Motor::PollErcpFeedback(BeckhoffSnapshot &next)
     }};
     std::array<std::uint32_t, requests.size()> errors{};
     const auto result = ReadDataBatch(requests.data(), requests.size(), errors.data());
+    const auto failureDetails = FormatAdsReadFailures(requests, requests.size(), errors);
+    if (!failureDetails.empty() && failureDetails != lastFailureDetails) {
+        ROBOT_ERROR(true,
+                    "Beckhoff ERCP feedback leaf fields unavailable; publishing successful fields: "
+                        << failureDetails)
+    } else if (result == ADSERR_NOERR && !lastFailureDetails.empty()) {
+        ROBOT_INFO(true, "Beckhoff ERCP feedback leaf reads recovered; all fields are readable.")
+    }
+    lastFailureDetails = failureDetails;
     next.ercp_feedback_ads_error = result;
     KeepFirstError(next.overall_ads_error, result);
     next.ercp_deliver_force = errors[0] == ADSERR_NOERR ? deliverForce : 0;
@@ -1061,12 +1094,32 @@ std::uint32_t Beckhoff_Motor::PollErcpFeedback(BeckhoffSnapshot &next)
  */
 void Beckhoff_Motor::PollErcpSnapshot(BeckhoffSnapshot &next,
                                       std::chrono::steady_clock::time_point cycleStarted,
-                                      std::chrono::steady_clock::time_point &nextProbe)
+                                      std::chrono::steady_clock::time_point &nextProbe,
+                                      std::string &lastAvailabilityFailureDetails,
+                                      std::string &lastStateFailureDetails,
+                                      std::string &lastFeedbackFailureDetails)
 {
+    const auto readAvailability = [&](bool &readyProbe) {
+        const auto result = ReadData(kErcpAvailabilitySymbol, kAdsBoolBytes, &readyProbe);
+        const std::array<AdsReadRequest, 1> requests{{
+            {kErcpAvailabilitySymbol, kAdsBoolBytes, &readyProbe},
+        }};
+        const std::array<std::uint32_t, 1> errors{{result}};
+        const auto failureDetails = FormatAdsReadFailures(requests, requests.size(), errors);
+        if (!failureDetails.empty() && failureDetails != lastAvailabilityFailureDetails) {
+            ROBOT_ERROR(true,
+                        "Beckhoff ERCP availability gate unavailable: " << failureDetails)
+        } else if (failureDetails.empty() && !lastAvailabilityFailureDetails.empty()) {
+            ROBOT_INFO(true,
+                       "Beckhoff ERCP availability gate recovered; readiness symbol is readable.")
+        }
+        lastAvailabilityFailureDetails = failureDetails;
+        return result == ADSERR_NOERR;
+    };
+
     if (!m_ercp_available.load(std::memory_order_acquire) && cycleStarted >= nextProbe) {
         bool readyProbe = false;
-        const bool detected =
-            ReadData(kErcpAvailabilitySymbol, kAdsBoolBytes, &readyProbe) == ADSERR_NOERR;
+        const bool detected = readAvailability(readyProbe);
         m_ercp_available.store(detected, std::memory_order_release);
         if (detected)
             m_ercp_failed_polls = 0;
@@ -1078,8 +1131,8 @@ void Beckhoff_Motor::PollErcpSnapshot(BeckhoffSnapshot &next,
         return;
     }
 
-    const auto stateError = PollErcpState(next);
-    const auto feedbackError = PollErcpFeedback(next);
+    const auto stateError = PollErcpState(next, lastStateFailureDetails);
+    const auto feedbackError = PollErcpFeedback(next, lastFeedbackFailureDetails);
     if (stateError == ADSERR_NOERR && feedbackError == ADSERR_NOERR) {
         m_ercp_failed_polls = 0;
     } else {
@@ -1087,8 +1140,7 @@ void Beckhoff_Motor::PollErcpSnapshot(BeckhoffSnapshot &next,
         // interface disappeared. Re-check the readiness symbol and only
         // demote availability after repeated readiness read failures.
         bool readyProbe = false;
-        const bool detected =
-            ReadData(kErcpAvailabilitySymbol, kAdsBoolBytes, &readyProbe) == ADSERR_NOERR;
+        const bool detected = readAvailability(readyProbe);
         if (detected) {
             m_ercp_failed_polls = 0;
         } else if (++m_ercp_failed_polls >= 3) {
@@ -1119,6 +1171,9 @@ void Beckhoff_Motor::StateUpdateThread()
 {
     auto nextErcpProbe = std::chrono::steady_clock::now();
     std::string lastCommonFailureDetails;
+    std::string lastErcpAvailabilityFailureDetails;
+    std::string lastErcpStateFailureDetails;
+    std::string lastErcpFeedbackFailureDetails;
 
     while (!boost::this_thread::interruption_requested()) {
         // 阶段一：建立本轮快照基线和时间/序号元数据。
@@ -1130,7 +1185,12 @@ void Beckhoff_Motor::StateUpdateThread()
 
         // 阶段二：读取公共字段，再按可选能力读取 ERCP 字段并汇总错误。
         PollCommonSnapshot(next, lastCommonFailureDetails);
-        PollErcpSnapshot(next, cycleStarted, nextErcpProbe);
+        PollErcpSnapshot(next,
+                         cycleStarted,
+                         nextErcpProbe,
+                         lastErcpAvailabilityFailureDetails,
+                         lastErcpStateFailureDetails,
+                         lastErcpFeedbackFailureDetails);
         // 阶段三：一次性发布本轮快照，保持读侧看到的字段组相互对应。
         PublishSnapshot(next);
 

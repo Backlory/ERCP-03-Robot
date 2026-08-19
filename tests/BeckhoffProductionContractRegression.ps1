@@ -51,6 +51,15 @@ Require-Text $source 'MAIN.Info_Feedback_ToMaster.Axes_Pos[' 'axis element symbo
 Require-Text $source 'MAIN.Info_Feedback_ToMaster.Force_Sensor[' 'force sensor element symbols'
 Require-Text $source 'kErcpAvailabilitySymbol' 'ERCP interface availability probe symbol'
 Require-Text $source 'POU_Ercp_CycleExecute.Ercp_Ready_State' 'ERCP readiness probe symbol'
+Require-Text $source 'FormatAdsReadFailures' 'shared per-leaf ADS error formatter'
+Require-Text $source 'Beckhoff ERCP state leaf fields unavailable' `
+    'ERCP state missing-symbol diagnostics'
+Require-Text $source 'Beckhoff ERCP feedback leaf fields unavailable' `
+    'ERCP feedback missing-symbol diagnostics'
+Require-Text $source 'Beckhoff ERCP availability gate unavailable' `
+    'ERCP readiness gate diagnostics'
+Require-Text $source 'lastErcpStateFailureDetails' 'ERCP state diagnostic de-duplication'
+Require-Text $source 'lastErcpFeedbackFailureDetails' 'ERCP feedback diagnostic de-duplication'
 Require-Text $source 'ADSIGRP_SUMUP_READ' 'ADS Sum Read transport'
 Require-Text $source 'std::array<AdsReadRequest, kErcpStateRequestCount>' `
     'ERCP state element Sum Read group'

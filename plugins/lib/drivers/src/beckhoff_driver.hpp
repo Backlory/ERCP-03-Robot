@@ -140,9 +140,14 @@ private:
     void PollCommonSnapshot(BeckhoffSnapshot &next, std::string &lastFailureDetails);
     void PollErcpSnapshot(BeckhoffSnapshot &next,
                           std::chrono::steady_clock::time_point cycleStarted,
-                          std::chrono::steady_clock::time_point &nextProbe);
-    std::uint32_t PollErcpState(BeckhoffSnapshot &next);
-    std::uint32_t PollErcpFeedback(BeckhoffSnapshot &next);
+                          std::chrono::steady_clock::time_point &nextProbe,
+                          std::string &lastAvailabilityFailureDetails,
+                          std::string &lastStateFailureDetails,
+                          std::string &lastFeedbackFailureDetails);
+    std::uint32_t PollErcpState(BeckhoffSnapshot &next,
+                                std::string &lastFailureDetails);
+    std::uint32_t PollErcpFeedback(BeckhoffSnapshot &next,
+                                   std::string &lastFailureDetails);
     void PublishSnapshot(BeckhoffSnapshot next);
     boost::shared_ptr<boost::thread> m_StateUpdate_Thread;
 
