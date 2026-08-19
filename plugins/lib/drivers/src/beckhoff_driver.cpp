@@ -72,6 +72,12 @@ constexpr std::size_t kErcpMoveStatusRequestIndex = kErcpTypeRequestIndex + 1;
 constexpr std::size_t kErcpLoadDirectionRequestIndex = kErcpMoveStatusRequestIndex + 1;
 constexpr std::size_t kErcpStateRequestCount = kErcpLoadDirectionRequestIndex + 1;
 
+// Interface presence is determined by the ERCP readiness symbol, not by an
+// optional force-feedback leaf. A successful read means the interface exists;
+// the BOOL value itself is published separately as the ready flag.
+constexpr const char *kErcpAvailabilitySymbol =
+    "POU_Ercp_CycleExecute.Ercp_Ready_State";
+
 const auto kErcpDriveErrorNames =
     MakeIndexedSymbolNames<kErcpDriveErrorCount>("MAIN_ERCP.DriveErrorState_ERCP[");
 const auto kErcpMotorErrorNames =
@@ -176,12 +182,12 @@ bool Beckhoff_Motor::OpenConn(string sIPAddr,
     }
     m_bIsOpen.store(true, std::memory_order_release);
     m_sum_read_supported = true;
-    // MAIN_ERCP is optional. Probe one known leaf symbol; all robot-body
-    // feedback below is read through the static leaf table directly.
-    double ercpProbe = 0;
-    m_ercp_available.store(ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force",
-                                    kAdsLrealBytes,
-                                    &ercpProbe) == ADSERR_NOERR,
+    // MAIN_ERCP is optional. Probe the readiness symbol; a successful read
+    // means the interface exists even when the cart is currently not ready.
+    bool ercpReadyProbe = false;
+    m_ercp_available.store(ReadData(kErcpAvailabilitySymbol,
+                                    kAdsBoolBytes,
+                                    &ercpReadyProbe) == ADSERR_NOERR,
                            std::memory_order_release);
     m_StateUpdate_Thread =
         boost::make_shared<boost::thread>(&Beckhoff_Motor::StateUpdateThread, this);
@@ -1058,11 +1064,9 @@ void Beckhoff_Motor::PollErcpSnapshot(BeckhoffSnapshot &next,
                                       std::chrono::steady_clock::time_point &nextProbe)
 {
     if (!m_ercp_available.load(std::memory_order_acquire) && cycleStarted >= nextProbe) {
-        double probe = 0;
+        bool readyProbe = false;
         const bool detected =
-            ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force",
-                     kAdsLrealBytes,
-                     &probe) == ADSERR_NOERR;
+            ReadData(kErcpAvailabilitySymbol, kAdsBoolBytes, &readyProbe) == ADSERR_NOERR;
         m_ercp_available.store(detected, std::memory_order_release);
         if (detected)
             m_ercp_failed_polls = 0;
@@ -1078,12 +1082,22 @@ void Beckhoff_Motor::PollErcpSnapshot(BeckhoffSnapshot &next,
     const auto feedbackError = PollErcpFeedback(next);
     if (stateError == ADSERR_NOERR && feedbackError == ADSERR_NOERR) {
         m_ercp_failed_polls = 0;
-    } else if (++m_ercp_failed_polls >= 3) {
-        m_ercp_available.store(false, std::memory_order_release);
-        m_ercp_failed_polls = 0;
-        next.valid_groups &=
-            static_cast<std::uint8_t>(~(SnapshotErcpState | SnapshotErcpFeedback));
-        nextProbe = cycleStarted + std::chrono::seconds(1);
+    } else {
+        // Missing optional feedback leaves do not mean that the ERCP
+        // interface disappeared. Re-check the readiness symbol and only
+        // demote availability after repeated readiness read failures.
+        bool readyProbe = false;
+        const bool detected =
+            ReadData(kErcpAvailabilitySymbol, kAdsBoolBytes, &readyProbe) == ADSERR_NOERR;
+        if (detected) {
+            m_ercp_failed_polls = 0;
+        } else if (++m_ercp_failed_polls >= 3) {
+            m_ercp_available.store(false, std::memory_order_release);
+            m_ercp_failed_polls = 0;
+            next.valid_groups &=
+                static_cast<std::uint8_t>(~(SnapshotErcpState | SnapshotErcpFeedback));
+            nextProbe = cycleStarted + std::chrono::seconds(1);
+        }
     }
 }
 

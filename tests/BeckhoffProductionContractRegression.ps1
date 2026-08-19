@@ -49,10 +49,12 @@ Require-Text $source 'MakeIndexedSymbolNames' 'element-symbol name construction'
 Require-Text $source 'MAIN.MotorErrorState[' 'main motor error element symbols'
 Require-Text $source 'MAIN.Info_Feedback_ToMaster.Axes_Pos[' 'axis element symbols'
 Require-Text $source 'MAIN.Info_Feedback_ToMaster.Force_Sensor[' 'force sensor element symbols'
+Require-Text $source 'kErcpAvailabilitySymbol' 'ERCP interface availability probe symbol'
+Require-Text $source 'POU_Ercp_CycleExecute.Ercp_Ready_State' 'ERCP readiness probe symbol'
 Require-Text $source 'ADSIGRP_SUMUP_READ' 'ADS Sum Read transport'
 Require-Text $source 'std::array<AdsReadRequest, kErcpStateRequestCount>' `
     'ERCP state element Sum Read group'
-Require-Text $source 'const std::array<AdsReadRequest, 11> ercpFeedbackRequests' `
+Require-Text $source 'const std::array<AdsReadRequest, 11> requests' `
     'ERCP feedback Sum Read group'
 Require-Text $source 'std::vector<std::size_t> validIndices' `
     'partial Sum Read when one symbol is absent'
@@ -66,6 +68,10 @@ foreach ($forbidden in @(
     if ($source.Contains($forbidden) -or $layout.Contains($forbidden)) {
         $failures.Add("320-byte parent/remote-array dependency remains: $forbidden")
     }
+}
+
+if ($source.Contains('ReadData("MAIN_ERCP.ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force"')) {
+    $failures.Add('ERCP interface probe must not depend on ERCP_Deliver_Force')
 }
 
 if ($failures.Count -ne 0) {

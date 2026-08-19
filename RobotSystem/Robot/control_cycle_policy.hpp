@@ -39,7 +39,7 @@ struct PreparedCommands {
 
 /**
  * @brief 对网络控制命令执行新鲜度、ERCP 状态和注射器状态安全门控。
- * @details 先生成可安全下发的连续控制量，再映射 ERCP 离散字段；过期或未就绪时将危险动作归零。
+ * @details 先保留新鲜命令中的连续控制量，再依据 ERCP 在线/就绪状态门控 ERCP 离散字段；过期命令由调用方替换为全零命令。
  */
 inline PreparedCommands PrepareCommands(const protocol::v3::ControlPayload &control,
                                          bool fresh,
@@ -50,16 +50,11 @@ inline PreparedCommands PrepareCommands(const protocol::v3::ControlPayload &cont
     using protocol::v3::ControlValueIndex;
     using protocol::v3::controlIndex;
 
-    // 阶段一：复制原始控制量，并根据命令新鲜度和 ERCP 状态决定危险动作是否允许。
+    // 阶段一：复制原始控制量。ERCP 在线/就绪状态只门控离散 ERCP 命令；
+    // 新鲜命令中的四个 ERCP 连续量按原值继续进入 Follow_Control_Cmd。
     PreparedCommands prepared;
     prepared.safe_control = control;
     prepared.ercp_allowed = fresh && ercp_online && ercp_ready;
-    if (!prepared.ercp_allowed) {
-        prepared.safe_control.values[controlIndex(ControlValueIndex::CutterFeed)] = 0;
-        prepared.safe_control.values[controlIndex(ControlValueIndex::CutterSwing)] = 0;
-        prepared.safe_control.values[controlIndex(ControlValueIndex::CutterBend)] = 0;
-        prepared.safe_control.values[controlIndex(ControlValueIndex::GuideWireFeed)] = 0;
-    }
 
     // 阶段二：把安全后的协议字段映射为 Beckhoff 适配器使用的离散命令布局。
     auto &discrete = prepared.discrete;

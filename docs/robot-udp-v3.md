@@ -98,10 +98,12 @@ wire 定义唯一权威源在仓库根 `shared-wire/robot_udp_v3.hpp`（配套
 - 金标准不定义旧版 `MAIN.IEncoder`/`MAIN.ISensor`，Robot 不得查询这些符号。
   为保持 V3 的 8 组/1200B 线格式，第 3 组改为固定全零的保留组；
 - `MAIN_ERCP.*` 属于可选台车。Robot 以
-  `ERCP_Info_Feedback_ToMaster.ERCP_Deliver_Force` 叶子符号探测接口，
-  不可用时清除 ERCP 有效组且不影响机器人本体；每秒只读重探测，支持晚接入；
-- ERCP 连续量、operate/cooperate、6D handle、3 buttons 和双注射器命令
-  仅在网络命令新鲜、台车 online 且 ready 时写入，否则实际写入/回显均为零；
+  `POU_Ercp_CycleExecute.Ercp_Ready_State` 叶子符号探测接口；读取成功代表接口存在，
+  BOOL 值仅表示当前是否 ready。接口不可用时清除 ERCP 有效组且不影响机器人本体；
+  每秒只读重探测，支持晚接入；
+- ERCP 连续量只受网络命令新鲜度影响，即使台车 offline 或未 ready 也按原值写入
+  `MAIN.Follow_Control_Cmd`；operate/cooperate、6D handle、3 buttons 和双注射器
+  离散命令仍仅在台车 online 且 ready 时写入，否则实际写入/回显为零；
 - 注射状态为完成（11）时，相应注射使能强制为 `FALSE`。
 - Balloon pressure、operator position。
 

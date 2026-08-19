@@ -429,14 +429,22 @@ void TestControlCyclePolicy()
     Expect(allowed.discrete.inject_enable[0] && !allowed.discrete.inject_enable[1],
            "a completed injector is disabled while the other injector remains enabled");
 
-    const auto blocked =
-        ercp::control_cycle::PrepareCommands(control, true, true, false, snapshot);
-    Expect(!blocked.ercp_allowed && !blocked.discrete.operate &&
-               blocked.discrete.handle_6d[0] == 0 && !blocked.discrete.inject_enable[0],
-           "ERCP outputs are zeroed when the device is not ready");
-    Expect(blocked.safe_control.values[6] == 0 && blocked.safe_control.values[7] == 0 &&
-               blocked.safe_control.values[8] == 0 && blocked.safe_control.values[9] == 0,
-           "ERCP motion axes are zeroed by the same safety gate");
+    const auto offline =
+        ercp::control_cycle::PrepareCommands(control, true, false, false, snapshot);
+    Expect(!offline.ercp_allowed && !offline.discrete.operate &&
+               offline.discrete.handle_6d[0] == 0 && !offline.discrete.inject_enable[0],
+           "ERCP discrete outputs remain gated when the device is offline");
+    Expect(offline.safe_control.values[6] == control.values[6] &&
+               offline.safe_control.values[7] == control.values[7] &&
+               offline.safe_control.values[8] == control.values[8] &&
+               offline.safe_control.values[9] == control.values[9],
+           "ERCP continuous axes pass through while the device is offline");
+    const auto offline_follow = ercp::control_cycle::ToFollowCommand(offline.safe_control);
+    Expect(offline_follow.vel_cutter_feed == 1.0 &&
+               offline_follow.vel_cutter_rot == -1.0 &&
+               offline_follow.vel_cutter_bend == 1.0 &&
+               offline_follow.vel_wire_feed == -1.0,
+           "offline ERCP continuous axes reach Follow_Control_Cmd without zeroing");
 
     const auto follow = ercp::control_cycle::ToFollowCommand(allowed.safe_control);
     Expect(follow.follow_comp_botton == 1.0 && follow.vel_move == -1.0 &&
