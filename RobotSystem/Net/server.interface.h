@@ -11,6 +11,7 @@ namespace robot {
 bool init();
 bool start();
 bool close();
+bool emergency_stop(bool active);
 bool interrupt();
 bool skip();
 

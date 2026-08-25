@@ -47,6 +47,7 @@ public:
     bool BeckhoffERCPOperateState(bool state) const override;
     bool BeckhoffIsERCPOnline() const override;
     bool BeckhoffIsERCPReady() const override;
+    bool BeckhoffEmergencyStop(bool active) const override;
 
 private:
     void InitDevices(int verbose);

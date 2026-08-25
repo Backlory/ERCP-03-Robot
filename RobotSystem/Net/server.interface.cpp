@@ -37,6 +37,11 @@ bool close()
     return YunSBot::GetInstance().base.Stop();
 }
 
+bool emergency_stop(bool active)
+{
+    return GetRobot().BeckhoffEmergencyStop(active);
+}
+
 bool interrupt()
 {
     return true;

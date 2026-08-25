@@ -39,6 +39,9 @@ public:
     virtual bool BeckhoffERCPOperateState(bool state) const = 0;
     virtual bool BeckhoffIsERCPOnline() const = 0;
     virtual bool BeckhoffIsERCPReady() const = 0;
+    // Emergency stop is deliberately separate from the normal UDP motion
+    // command stream and lifecycle close operation.
+    virtual bool BeckhoffEmergencyStop(bool active) const = 0;
 };
 
 ROBOT_API_MEMBER const std::wstring GetIOInputConfig(int index);

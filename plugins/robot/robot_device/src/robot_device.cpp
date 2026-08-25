@@ -176,4 +176,9 @@ bool _RobotDevice::BeckhoffIsERCPReady() const
     return beckhoff::Beckhoff_Motor::GetInstance().IsERCPReady();
 }
 
+bool _RobotDevice::BeckhoffEmergencyStop(bool active) const
+{
+    return beckhoff::Beckhoff_Motor::GetInstance().EmergencyStop(active);
+}
+
 } // namespace ercp

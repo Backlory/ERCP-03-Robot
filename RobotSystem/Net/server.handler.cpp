@@ -239,6 +239,27 @@ public:
     const std::string action;
 };
 
+class robot_emergency_stop : public basic_request {
+public:
+    robot_emergency_stop()
+    {
+        info.emplace_back(keys_info{"active", {typeid(bool)}});
+    }
+
+    Json handler(const Json &json) override
+    {
+        Json d;
+        const bool active = json.get("active").extract<bool>();
+        const bool ok = robot::emergency_stop(active);
+        d.set("status", ok);
+        if (!ok) {
+            d.set(kBusinessFailInfoKey,
+                  fmt::format("Emergency stop {} failed.", active ? "assert" : "clear"));
+        }
+        return d;
+    }
+};
+
 //-----------------------------------------------------------------------------
 
 class settings_base : public basic_request {
@@ -643,6 +664,7 @@ Handler::Handler()
                          {"init", std::make_shared<robot_init>("init")}, //
                          {"start", std::make_shared<robot_init>("start")}, //
                          {"close", std::make_shared<robot_init>("close")}, //
+                         {"emergency-stop", std::make_shared<robot_emergency_stop>()}, //
                          {"interrupt", std::make_shared<robot_init>("interrupt")}, //
                          {"skip", std::make_shared<robot_init>("skip")}, //
                          {"forcerecord", std::make_shared<robot_force_record>()}, //
