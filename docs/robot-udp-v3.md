@@ -45,7 +45,8 @@ V3.1 完整命令包固定为 224B，payload 为 176B。它可以承载：
 - ERCP operate/cooperate、6D handle、3 buttons；
 - 双注射器速度、目标位置和使能；
 - payload 偏移 170 的 `uint16 emergency_stop`（完整包偏移 218），取值只能是 0/1；
-  只有 Master 来源允许置 1，偏移 172~175 必须为零。
+  这里的 1 表示 Master 请求急停，不是 Beckhoff 原始电平；只有 Master 来源允许置 1，
+  偏移 172~175 必须为零。
 
 V3.1 只接受 major version=3、minor version=1、固定包长和固定字段布局；任何版本、长度或字段布局
 不一致的输入都会被严格解码器拒绝。
@@ -56,8 +57,9 @@ V3.1 只接受 major version=3、minor version=1、固定包长和固定字段�
   Master 包显式发送 `emergency_stop=0`。
 - Robot 独立检查 Master 通道的急停字段，不把它交给自动模式下的 Cloud/Master 普通运动源仲裁；
   Cloud 包的急停字段必须为零，不能断言或解除 Master 急停。
-- Robot 将 Master UDP 急停与兼容 HTTP `/robot/emergency-stop` 请求合并；只有两个来源都释放后
-  才向 `MAIN.Emergency_Stop_FromMaster` 写入 0。
+- Robot 将 Master UDP 急停与兼容 HTTP `/robot/emergency-stop` 请求合并；领域语义为急停时向
+  `MAIN.Emergency_Stop_FromMaster` 写入 0，只有两个来源都释放后才写入 1。该 Beckhoff
+  变量是低有效信号。
 - Master 包过期、UDP 丢包、Cloud 命令切换和普通零命令都不会自动解除已断言的急停。
 
 ### 命令保活、过期与源仲裁契约

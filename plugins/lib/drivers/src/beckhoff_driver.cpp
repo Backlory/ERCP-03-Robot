@@ -420,6 +420,7 @@ bool Beckhoff_Motor::SetEndoscopyType(int iType)
 /**
  * @brief 执行或解除机器人的急停状态。
  * @details 解除急停前先取消折叠/展开中的旧动作，再把急停位写入 PLC，确保恢复过程不会继续执行过期命令。
+ *          MAIN.Emergency_Stop_FromMaster 是低有效信号：0 表示急停，1 表示恢复。
  */
 bool Beckhoff_Motor::EmergencyStop(bool bIsStop)
 {
@@ -434,8 +435,11 @@ bool Beckhoff_Motor::EmergencyStop(bool bIsStop)
         }
     }
 
-    int iStop = bIsStop ? 1 : 0;
-    return WriteData("MAIN.Emergency_Stop_FromMaster", 4, &iStop) == ADSERR_NOERR;
+    // Domain semantics are true=emergency, while this Beckhoff BOOL/DINT
+    // interface is active-low: assert with 0 and release with 1.
+    int emergencyStopSignal = bIsStop ? 0 : 1;
+    return WriteData("MAIN.Emergency_Stop_FromMaster", 4, &emergencyStopSignal)
+        == ADSERR_NOERR;
 }
 
 // 读取
