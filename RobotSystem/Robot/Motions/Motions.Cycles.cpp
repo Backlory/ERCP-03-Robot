@@ -37,17 +37,21 @@ void YunSBot::_base::ControlRunnable2(double t)
     auto &robot = GetRobot();
     const bool automatic_mode = m_RobotAutoMode.load();
 
-    // 阶段一：先按 Master 优先策略仲裁控制源。
-    // 1. Select the control source. A recent Master command overrides Cloud
-    // control in automatic mode when the configured priority policy is enabled.
+    // 阶段一：先独立读取 Master 急停，再按普通运动命令策略仲裁控制源。
+    // Emergency stop is deliberately not part of Cloud/Master motion-source
+    // arbitration: a Cloud command must never mask a Master stop request.
     constexpr double kMasterPriorityWindowSeconds = 0.2;
-    bool master_within_priority_window = false;
-    if (automatic_mode && m_master_priority.load()) {
-        protocol::v3::ControlPayload probe_command;
-        robot_udp_v3::CommandMetadata probe_metadata;
-        master_within_priority_window = parent.master.GetCommand(
-            probe_command, probe_metadata, kMasterPriorityWindowSeconds);
+    protocol::v3::ControlPayload master_probe_command = robot_udp_v3::ZeroControl();
+    robot_udp_v3::CommandMetadata master_probe_metadata;
+    const bool master_command_fresh = parent.master.GetCommand(
+        master_probe_command, master_probe_metadata, kMasterPriorityWindowSeconds);
+    if (master_command_fresh) {
+        // A fresh explicit zero is the only UDP release authority. If the
+        // Master packet expires, this stored request is intentionally retained.
+        SetMasterUdpEmergencyStop(master_probe_command.emergency_stop != 0);
     }
+    const bool master_within_priority_window =
+        automatic_mode && m_master_priority.load() && master_command_fresh;
     const auto source_decision = control_cycle::ChooseSource(automatic_mode,
                                                               m_master_priority.load(),
                                                               master_within_priority_window);
@@ -73,6 +77,14 @@ void YunSBot::_base::ControlRunnable2(double t)
     }
     m_command_fresh = fresh;
 
+    // Force the ordinary motion command to zero while either emergency-stop
+    // authority is active. The audit field is kept asserted so status reflects
+    // the safety decision even when Cloud is the selected motion source.
+    if (EmergencyStopActive()) {
+        command = robot_udp_v3::ZeroControl();
+        command.emergency_stop = 1;
+    }
+
     // 阶段三：应用安全策略，把领域命令映射为两种 PLC 写入布局。
     const auto prepared = control_cycle::PrepareCommands(command,
                                                           fresh,
@@ -88,8 +100,15 @@ void YunSBot::_base::ControlRunnable2(double t)
     const auto ads_error = control_cycle::FirstAdsError(follow_error, discrete_error);
 
     // 阶段五：记录经过安全门控和限幅后真正送到 PLC 适配器的命令。
-    const auto applied_command =
+    auto applied_command =
         control_cycle::ToAppliedControl(follow_command, prepared.discrete);
+    applied_command.emergency_stop = command.emergency_stop;
+    // The applied-command record has the same authority rule as a wire
+    // control packet. If Cloud is the selected motion source, its audit record
+    // must not claim a Master-only emergency field, even when the independent
+    // safety latch forced the physical command to zero.
+    if (metadata.source != protocol::v3::Source::Master)
+        applied_command.emergency_stop = 0;
     m_applied_commands.MarkAttempt(applied_command,
                                    metadata,
                                    control_cycle::ClassifyApplyResult(fresh, ads_error),

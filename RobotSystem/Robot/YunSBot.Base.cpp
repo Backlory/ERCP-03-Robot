@@ -404,6 +404,44 @@ bool YunSBot::_base::IsLogging() const
     return m_logger != nullptr;
 }
 
+/**
+ * @brief 合并并写入两个急停请求源的有效状态。
+ * @details Master UDP 与兼容 HTTP/RPC 各自保持状态；只有两个来源都释放时才向 PLC 写 0，写失败则保留待写状态供下一个控制周期重试。
+ */
+bool YunSBot::_base::ApplyEmergencyStopLocked()
+{
+    const bool desired = m_master_udp_emergency_stop || m_rpc_emergency_stop;
+    if (m_has_written_emergency_stop && m_last_written_emergency_stop == desired)
+        return true;
+
+    if (!GetRobot().BeckhoffEmergencyStop(desired))
+        return false;
+
+    m_last_written_emergency_stop = desired;
+    m_has_written_emergency_stop = true;
+    return true;
+}
+
+bool YunSBot::_base::SetMasterUdpEmergencyStop(bool active)
+{
+    std::lock_guard<std::mutex> lock(m_emergency_stop_mutex);
+    m_master_udp_emergency_stop = active;
+    return ApplyEmergencyStopLocked();
+}
+
+bool YunSBot::_base::SetRpcEmergencyStop(bool active)
+{
+    std::lock_guard<std::mutex> lock(m_emergency_stop_mutex);
+    m_rpc_emergency_stop = active;
+    return ApplyEmergencyStopLocked();
+}
+
+bool YunSBot::_base::EmergencyStopActive() const
+{
+    std::lock_guard<std::mutex> lock(m_emergency_stop_mutex);
+    return m_master_udp_emergency_stop || m_rpc_emergency_stop;
+}
+
 boost::asio::io_service &YunSBot::_base::GetIOServer()
 {
     return io_service;

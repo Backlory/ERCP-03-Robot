@@ -31,21 +31,34 @@ Master 与 Robot 之间的 31001/31002 为跨机通道，31002 接收端按配�
 | 31003 | Robot → Cloud 状态 |
 | 31004 | Cloud → Robot 命令 |
 
-公共包头为 48B，网络字节序为 big-endian，`version_major=3`。
+公共包头为 48B，网络字节序为 big-endian，当前协议版本为 `3.1`（`version_major=3`、
+`version_minor=1`）。
 
 V3 完整状态包固定为 1200B，各组大小依次为：
 
 `24 / 312 / 40 / 24 / 80 / 448 / 64 / 24`
 
-V3 完整命令包固定为 224B，payload 为 176B。它可以承载：
+V3.1 完整命令包固定为 224B，payload 为 176B。它可以承载：
 
 - 原连续 10 路 `LREAL` 和 6 个开关；
 - Robot action（`-1` 不操作，`0..3` 对应待机/折叠/展开/跟随）；
 - ERCP operate/cooperate、6D handle、3 buttons；
-- 双注射器速度、目标位置和使能。
+- 双注射器速度、目标位置和使能；
+- payload 偏移 170 的 `uint16 emergency_stop`（完整包偏移 218），取值只能是 0/1；
+  只有 Master 来源允许置 1，偏移 172~175 必须为零。
 
-V3 只接受 major version=3、固定包长和固定字段布局；任何版本、长度或字段布局
+V3.1 只接受 major version=3、minor version=1、固定包长和固定字段布局；任何版本、长度或字段布局
 不一致的输入都会被严格解码器拒绝。
+
+### 急停来源合并
+
+- 面板急停由 Master 作为普通 31002 控制包的 `emergency_stop=1` 发送，解除时由新鲜
+  Master 包显式发送 `emergency_stop=0`。
+- Robot 独立检查 Master 通道的急停字段，不把它交给自动模式下的 Cloud/Master 普通运动源仲裁；
+  Cloud 包的急停字段必须为零，不能断言或解除 Master 急停。
+- Robot 将 Master UDP 急停与兼容 HTTP `/robot/emergency-stop` 请求合并；只有两个来源都释放后
+  才向 `MAIN.Emergency_Stop_FromMaster` 写入 0。
+- Master 包过期、UDP 丢包、Cloud 命令切换和普通零命令都不会自动解除已断言的急停。
 
 ### 命令保活、过期与源仲裁契约
 
@@ -67,7 +80,7 @@ V3 命令链路的在线与安全行为由三端共同保证：
 
 wire 定义唯一权威源在仓库根 `shared-wire/robot_udp_v3.hpp`（配套
 `schema/robot_udp_v3.yaml` 金标准 schema 与 `golden/*.hex` 黄金字节 fixture）。三端持有
-逐字节相同的副本，由 `sync.bat` 整文件分发，`SYNC-VERSION=6`；C# 侧
+逐字节相同的 C++ 副本，由 `sync.bat` 整文件分发，当前 `SYNC-VERSION=8`；C# 侧
 `02-Master/ErcpApp/Interface/RobotUdpV3.cs` 无法与 C++ 共文件，手工对齐后由三端黄金测试
 锁定字节语义（`robot_control_224.hex` / `robot_status_1200.hex`）。
 

@@ -1,7 +1,7 @@
 // [SHARED-WIRE] Robot UDP V3 C++ protocol canonical source.
 // 该规则适用于分发副本；本文件路径是 C++ 协议定义的唯一权威源。
 // SYNC-SOURCE : shared-wire/robot_udp_v3.hpp
-// SYNC-VERSION: 7
+// SYNC-VERSION: 8
 // SYNC-RULE   : 修改后运行 tools/robot_udp_v3_sync.ps1，再执行三端黄金测试。
 #pragma once
 
@@ -17,13 +17,13 @@
 namespace ercp::protocol::v3 {
 
 // 同步版本号:与文件头 SYNC-VERSION 保持一致;黄金测试将其打印进输出,供人工比对各端副本版本。
-constexpr int kRobotUdpV3SyncVersion = 7;
+constexpr int kRobotUdpV3SyncVersion = 8;
 
 using Bytes = std::vector<std::uint8_t>;
 
 constexpr std::uint32_t kMagic = 0x45524350u; // "ERCP"
 constexpr std::uint16_t kVersionMajor = 3;
-constexpr std::uint16_t kVersionMinor = 0;
+constexpr std::uint16_t kVersionMinor = 1;
 constexpr std::size_t kHeaderSize = 48;
 constexpr std::size_t kControlPayloadSize = 176;
 constexpr std::size_t kControlPacketSize = kHeaderSize + kControlPayloadSize;
@@ -102,6 +102,8 @@ struct ControlPayload {
     std::array<double, 2> inject_velocity{};
     std::array<double, 2> inject_position{};
     std::uint16_t inject_enables = 0;
+    // V3.1: 0 = release, 1 = assert. Only a Master control packet may set it.
+    std::uint16_t emergency_stop = 0;
 };
 
 struct StatusGroup {
@@ -486,6 +488,9 @@ inline bool validControl(const ControlPayload &payload, std::string *error)
         || payload.robot_action < -1 || payload.robot_action > 3) {
         return fail(error, "unknown ERCP control bit");
     }
+    if (payload.emergency_stop > 1) {
+        return fail(error, "emergency stop value must be 0 or 1");
+    }
     // Stage 2: reject non-finite continuous control values before they enter the
     // fixed-width binary64 encoding.
     for (double value : payload.values) if (!std::isfinite(value)) return fail(error, "non-finite control value");
@@ -498,6 +503,18 @@ inline bool validControl(const ControlPayload &payload, std::string *error)
     for (double value : payload.inject_position)
         if (!std::isfinite(value) || value < 0.0 || value > 1.0)
             return fail(error, "inject position outside [0,1]");
+    return true;
+}
+
+// V3.1 reserves the emergency-stop authority for the physical Master path.
+// Cloud may carry ordinary control fields but can neither assert nor clear it.
+inline bool validControlForSource(const ControlPayload &payload, Source source,
+    std::string *error)
+{
+    if (!validControl(payload, error)) return false;
+    if (payload.emergency_stop != 0 && source != Source::Master) {
+        return fail(error, "emergency stop is only valid for Master source");
+    }
     return true;
 }
 
@@ -635,10 +652,14 @@ inline bool validKnownGroup(const StatusGroup &group, std::string *error)
                 if (!finiteF64(group.payload, base + offset)) return fail(error, "non-finite ERCP applied command");
             const std::uint16_t source = be16(group.payload, base + 176);
             const std::uint16_t result = be16(group.payload, base + 178);
+            const std::uint16_t emergency_stop = be16(group.payload, base + 170);
             if ((be16(group.payload, base + 80) & ~0x003Fu) != 0
                 || (be16(group.payload, base + 82) & ~0x001Fu) != 0
                 || (be16(group.payload, base + 168) & ~0x0003u) != 0
-                || !allZero(group.payload, base + 170, 6)
+                || emergency_stop > 1
+                || (emergency_stop != 0
+                    && source != static_cast<std::uint16_t>(Source::Master))
+                || !allZero(group.payload, base + 172, 4)
                 || (source != 0 && source != 1 && source != 2 && source != 3 && source != 255)
                 || result > 5
                 || !allZero(group.payload, base + 216, 8)) {
@@ -706,14 +727,14 @@ inline void writeHeader(Writer &writer, const Header &header, std::uint32_t payl
 
 /**
  * @brief 功能：把 RobotControl 领域载荷编码为固定长度 UDP 控制包。
- * @details 机制：先校验消息头和控制值，再按字段线序写入数值、开关、ERCP 扩展和保留字节，最后确认输出长度保持协议约束。
+ * @details 机制：先校验消息头和控制值，再按字段线序写入数值、开关、ERCP 扩展和 V3.1 急停字段，最后确认输出长度保持协议约束。
  */
 inline bool encodeControl(const Header &header, const ControlPayload &payload, Bytes &output,
     std::string *error = nullptr)
 {
     // 阶段一：校验头部和控制载荷；阶段二：按固定线序写入字段及保留字节；阶段三：确认包长未漂移。
     if (!detail::validHeader(header, MessageType::RobotControl, error)) return false;
-    if (!detail::validControl(payload, error)) return false;
+    if (!detail::validControlForSource(payload, header.source, error)) return false;
 
     output.clear();
     output.reserve(kControlPacketSize);
@@ -727,13 +748,14 @@ inline bool encodeControl(const Header &header, const ControlPayload &payload, B
     for (double value : payload.inject_velocity) writer.f64(value);
     for (double value : payload.inject_position) writer.f64(value);
     writer.u16(payload.inject_enables);
-    for (int i = 0; i < 6; ++i) writer.u8(0);
+    writer.u16(payload.emergency_stop);
+    for (int i = 0; i < 4; ++i) writer.u8(0);
     return output.size() == kControlPacketSize;
 }
 
 /**
  * @brief 功能：把固定长度 UDP 控制包解码为控制消息和领域载荷。
- * @details 机制：先验证输入长度和消息头，再按字段顺序读取、校验保留字节并确认没有尾部残留，避免部分解析被误当成有效命令。
+ * @details 机制：先验证输入长度和消息头，再按字段顺序读取、校验 V3.1 急停字段及尾部填充并确认没有尾部残留，避免部分解析被误当成有效命令。
  */
 inline bool decodeControl(const std::uint8_t *data, std::size_t size, Header &header,
     ControlPayload &payload, std::string *error = nullptr)
@@ -754,9 +776,10 @@ inline bool decodeControl(const std::uint8_t *data, std::size_t size, Header &he
     for (double &value : payload.ercp_6d) if (!reader.f64(value)) return false;
     for (double &value : payload.inject_velocity) if (!reader.f64(value)) return false;
     for (double &value : payload.inject_position) if (!reader.f64(value)) return false;
-    if (!reader.u16(payload.inject_enables) || !detail::validControl(payload, error)) return false;
+    if (!reader.u16(payload.inject_enables) || !reader.u16(payload.emergency_stop)
+        || !detail::validControlForSource(payload, header.source, error)) return false;
     Bytes reserved;
-    if (!reader.copy(reserved, 6) || !detail::allZero(reserved, 0, reserved.size())) {
+    if (!reader.copy(reserved, 4) || !detail::allZero(reserved, 0, reserved.size())) {
         return detail::fail(error, "non-zero control reserved data");
     }
     return reader.remaining() == 0;
@@ -909,7 +932,7 @@ inline StatusGroup group(GroupId id, std::uint64_t sampledAt, Bytes payload)
 
 /**
  * @brief 功能：把一条已应用控制命令审计记录写入状态组。
- * @details 机制：复用控制载荷的固定线序，并追加来源、写入结果、会话序号、时间戳和 ADS 错误，保留字段始终写零。
+ * @details 机制：复用控制载荷的固定线序，并追加来源、写入结果、会话序号、时间戳和 ADS 错误；V3.1 急停字段按原始命令记录，尾部填充始终写零。
  */
 inline void writeAppliedCommand(Writer &writer, const AppliedCommandRecord &record)
 {
@@ -921,7 +944,8 @@ inline void writeAppliedCommand(Writer &writer, const AppliedCommandRecord &reco
     for (double value : record.command.inject_velocity) writer.f64(value);
     for (double value : record.command.inject_position) writer.f64(value);
     writer.u16(record.command.inject_enables);
-    for (int i = 0; i < 6; ++i) writer.u8(0);
+    writer.u16(record.command.emergency_stop);
+    for (int i = 0; i < 4; ++i) writer.u8(0);
     writer.u16(static_cast<std::uint16_t>(record.source));
     writer.u16(static_cast<std::uint16_t>(record.result));
     writer.u64(record.command_session_id);
@@ -952,12 +976,15 @@ inline bool readAppliedCommand(Reader &reader, AppliedCommandRecord &record)
     for (double &value : record.command.ercp_6d) if (!reader.f64(value)) return false;
     for (double &value : record.command.inject_velocity) if (!reader.f64(value)) return false;
     for (double &value : record.command.inject_position) if (!reader.f64(value)) return false;
-    if (!reader.u16(record.command.inject_enables) || !reader.copy(reserved, 6)
+    if (!reader.u16(record.command.inject_enables) || !reader.u16(record.command.emergency_stop)
+        || !reader.copy(reserved, 4)
         || !reader.u16(source) || !reader.u16(result)
         || !reader.u64(record.command_session_id)
         || !reader.u64(record.command_sequence) || !reader.u64(record.received_unix_ns)
         || !reader.u64(record.applied_unix_ns) || !reader.u32(record.ads_error)
         || !reader.u32(reserved32a) || !reader.u32(reserved32b)
+        || record.command.emergency_stop > 1
+        || (record.command.emergency_stop != 0 && source != static_cast<std::uint16_t>(Source::Master))
         || !allZero(reserved, 0, reserved.size())
         || reserved32a != 0 || reserved32b != 0) {
         return false;

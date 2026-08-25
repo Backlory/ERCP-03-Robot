@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <future>
+#include <mutex>
 #include <boost/asio.hpp>
 #include <boost/signals2.hpp>
 #include <tbb/concurrent_map.h>
@@ -51,6 +52,12 @@ public:
         bool IsRobotStarting() const;
         bool IsRobotStopping() const;
         bool IsLogging() const;
+
+        // Emergency stop requests are merged inside Robot. The Master UDP
+        // request and the legacy HTTP/RPC request must not clear each other.
+        bool SetMasterUdpEmergencyStop(bool active);
+        bool SetRpcEmergencyStop(bool active);
+        bool EmergencyStopActive() const;
 
         bool SwitchAutoMode(bool enable);
         bool SwitchLogger(bool enable);
@@ -146,6 +153,11 @@ public:
         std::atomic<bool> m_command_fresh{false};
         std::atomic<std::uint64_t> m_accepted_command_received_unix_ns{0};
         std::atomic<std::uint64_t> m_lifecycle_changed_unix_ns{0};
+        mutable std::mutex m_emergency_stop_mutex;
+        bool m_master_udp_emergency_stop = false;
+        bool m_rpc_emergency_stop = false;
+        bool m_last_written_emergency_stop = false;
+        bool m_has_written_emergency_stop = false;
         const std::uint64_t m_status_session_id;
         std::uint64_t m_status_sequence = 0;
         std::uint64_t m_last_sent_common_sample_unix_ns = 0;
@@ -154,6 +166,7 @@ public:
         void ExitControlThreads();
         //            void ControlRunnable(double t);
         void ControlRunnable2(double t);
+        bool ApplyEmergencyStopLocked();
 
         protocol::v3::AppliedCommandPayload AppliedCommands() const;
         protocol::v3::Source ActiveSource() const;

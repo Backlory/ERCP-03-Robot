@@ -147,6 +147,22 @@ void TestCodec()
     Expect(decoded.values == payload.values && decoded.switches == payload.switches,
            "control payload round-trip");
 
+    auto emergencyPayload = payload;
+    emergencyPayload.emergency_stop = 1;
+    const auto emergencyBytes = ControlPacket(protocol::Source::Master,
+                                               0x0102030405060708ull,
+                                               0x1112131415161719ull,
+                                               emergencyPayload);
+    Expect(emergencyBytes.size() == 224 && emergencyBytes[218] == 0
+               && emergencyBytes[219] == 1 && emergencyBytes[220] == 0
+               && emergencyBytes[221] == 0 && emergencyBytes[222] == 0
+               && emergencyBytes[223] == 0,
+           "V3.1 emergency stop occupies payload offset 170 and keeps four-byte padding");
+    Expect(protocol::decodeControl(emergencyBytes.data(), emergencyBytes.size(),
+                                   decodedHeader, decoded, &error)
+               && decoded.emergency_stop == 1,
+           "V3.1 emergency stop round-trips through the Robot decoder");
+
     auto invalid = bytes;
     invalid[0] = 0;
     Expect(!protocol::decodeControl(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
@@ -167,9 +183,13 @@ void TestCodec()
     Expect(!protocol::decodeControl(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
            "non-zero header reserved rejected");
     invalid = bytes;
-    invalid[218] = 1;
+    invalid[219] = 2;
     Expect(!protocol::decodeControl(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
-           "non-zero control reserved rejected");
+           "out-of-range emergency stop rejected");
+    invalid = bytes;
+    invalid[220] = 1;
+    Expect(!protocol::decodeControl(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
+           "non-zero V3.1 control padding rejected");
 
     protocol::Header header;
     header.message_type = protocol::MessageType::RobotControl;
@@ -189,6 +209,15 @@ void TestCodec()
     outOfRange.inject_position[0] = -0.01;
     Expect(!protocol::encodeControl(header, outOfRange, output, &error),
            "inject position below zero rejected");
+    outOfRange = payload;
+    outOfRange.emergency_stop = 2;
+    Expect(!protocol::encodeControl(header, outOfRange, output, &error),
+           "out-of-range emergency stop rejected");
+    protocol::Header cloudHeader = header;
+    cloudHeader.source = protocol::Source::Cloud;
+    outOfRange.emergency_stop = 1;
+    Expect(!protocol::encodeControl(cloudHeader, outOfRange, output, &error),
+           "Cloud cannot assert the Master-only emergency stop");
 }
 
 /**
@@ -204,7 +233,8 @@ void TestFullStatus()
     status.beckhoff_common.values[0] = 12.5;
     status.ercp_feedback.operator_position = 0.75;
     status.applied_command.latest_write_attempt.command = SampleControl();
-    status.applied_command.latest_write_attempt.source = protocol::Source::Cloud;
+    status.applied_command.latest_write_attempt.command.emergency_stop = 1;
+    status.applied_command.latest_write_attempt.source = protocol::Source::Master;
     status.applied_command.latest_write_attempt.result = protocol::ApplyResult::Succeeded;
     status.ads_diagnostics.snapshot_sequence = 99;
     status.sampled_at_unix_ns.fill(1000);
@@ -232,6 +262,10 @@ void TestFullStatus()
     Expect(decoded.beckhoff_common.values[0] == 12.5 &&
                decoded.ercp_feedback.operator_position == 0.75,
            "full status business groups round-trip");
+    Expect(decoded.applied_command.latest_write_attempt.command.emergency_stop == 1
+               && decoded.applied_command.latest_write_attempt.source
+                   == protocol::Source::Master,
+           "applied-command emergency stop round-trips in the fixed status record");
 
     auto overlappingErcpFlags = bytes;
     constexpr std::size_t kErcpFlagsOffset = 496;
