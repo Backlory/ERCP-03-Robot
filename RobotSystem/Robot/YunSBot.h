@@ -53,11 +53,11 @@ public:
         bool IsRobotStopping() const;
         bool IsLogging() const;
 
-        // Emergency stop requests are merged inside Robot. The Master UDP
-        // request and the legacy HTTP/RPC request must not clear each other.
+        // Emergency stop is a dedicated Beckhoff signal. These two entry
+        // points are retained for the Master UDP and legacy HTTP/RPC callers,
+        // but neither one changes the ordinary motion command stream.
         bool SetMasterUdpEmergencyStop(bool active);
         bool SetRpcEmergencyStop(bool active);
-        bool EmergencyStopActive() const;
 
         bool SwitchAutoMode(bool enable);
         bool SwitchLogger(bool enable);
@@ -154,8 +154,6 @@ public:
         std::atomic<std::uint64_t> m_accepted_command_received_unix_ns{0};
         std::atomic<std::uint64_t> m_lifecycle_changed_unix_ns{0};
         mutable std::mutex m_emergency_stop_mutex;
-        bool m_master_udp_emergency_stop = false;
-        bool m_rpc_emergency_stop = false;
         bool m_last_written_emergency_stop = false;
         bool m_has_written_emergency_stop = false;
         const std::uint64_t m_status_session_id;
@@ -166,7 +164,7 @@ public:
         void ExitControlThreads();
         //            void ControlRunnable(double t);
         void ControlRunnable2(double t);
-        bool ApplyEmergencyStopLocked();
+        bool ApplyEmergencyStopLocked(bool active);
 
         protocol::v3::AppliedCommandPayload AppliedCommands() const;
         protocol::v3::Source ActiveSource() const;

@@ -119,7 +119,7 @@ Beckhoff_Motor::~Beckhoff_Motor()
 // 打开链接
 /**
  * @brief 功能：建立 Beckhoff ADS 连接，确认 PLC 可通信并启动状态轮询线程。
- * @details 机制：先初始化目标地址和 direct/原生传输，再读取 PLC 状态、必要时切换到 RUN，最后探测 ERCP 可选符号并启动轮询。
+ * @details 机制：先初始化目标地址和 direct/原生传输，再读取 PLC 状态但不改变其运行状态，最后探测 ERCP 可选符号并启动轮询。
  */
 bool Beckhoff_Motor::OpenConn(string sIPAddr,
                               int iPort,
@@ -186,22 +186,8 @@ bool Beckhoff_Motor::OpenConn(string sIPAddr,
         CloseConn();
         return false;
     }
-    if (nAdsState == 6) {
-        nAdsState = ADSSTATE_RUN;
-        {
-            std::lock_guard<std::mutex> lock(m_ads_mutex);
-            nErr = AdsWriteControl(nAdsState, nDeviceState, 0, nullptr);
-        }
-        if (nErr) {
-            // printf(m_lastError, "Error: AdsSyncWriteControlReq: ", nErr);
-            {
-                std::lock_guard<std::mutex> lock(m_snapshot_mutex);
-                m_snapshot.overall_ads_error = static_cast<std::uint32_t>(nErr);
-            }
-            CloseConn();
-            return false;
-        }
-    }
+    // Connecting to ADS must not start the PLC. Keep the state read above as a
+    // communication check and leave STOP/RUN control to the operator.
     m_bIsOpen.store(true, std::memory_order_release);
     m_sum_read_supported = true;
     // MAIN_ERCP is optional. Probe the readiness symbol; a successful read
@@ -419,25 +405,14 @@ bool Beckhoff_Motor::SetEndoscopyType(int iType)
 
 /**
  * @brief 执行或解除机器人的急停状态。
- * @details 解除急停前先取消折叠/展开中的旧动作，再把急停位写入 PLC，确保恢复过程不会继续执行过期命令。
- *          MAIN.Emergency_Stop_FromMaster 是低有效信号：0 表示急停，1 表示恢复。
+ * @details 急停只写入 PLC 专用急停变量，不触碰运动状态或 Status_Command_FromMaster。
+ *          当前 TwinCAT 工程约定 MAIN.Emergency_Stop_FromMaster 为高有效：1 表示急停，0 表示恢复。
  */
 bool Beckhoff_Motor::EmergencyStop(bool bIsStop)
 {
-    // 急停解除时先取消折叠/展开中的动作，再把主急停位写入 PLC，避免恢复路径继续执行旧动作。
-    if (!bIsStop) {
-        // 非急停为恢�?原有的运动状态恢复为初始状�?
-        const auto moveState = MoveState();
-        if (beckhoff_arm_move_state::BAMS_FOLDING == moveState ||
-            beckhoff_arm_move_state::BAMS_OPENING == moveState) {
-            if (!ArmOperation(beckhoff_arm_operation::BAO_NONE))
-                return false;
-        }
-    }
-
-    // Domain semantics are true=emergency, while this Beckhoff BOOL/DINT
-    // interface is active-low: assert with 0 and release with 1.
-    int emergencyStopSignal = bIsStop ? 0 : 1;
+    // Domain semantics and the PLC variable use the same polarity:
+    // true/1 asserts the emergency stop, false/0 releases it.
+    int emergencyStopSignal = bIsStop ? 1 : 0;
     return WriteData("MAIN.Emergency_Stop_FromMaster", 4, &emergencyStopSignal)
         == ADSERR_NOERR;
 }

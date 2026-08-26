@@ -57,9 +57,11 @@ V3.1 只接受 major version=3、minor version=1、固定包长和固定字段�
   Master 包显式发送 `emergency_stop=0`。
 - Robot 独立检查 Master 通道的急停字段，不把它交给自动模式下的 Cloud/Master 普通运动源仲裁；
   Cloud 包的急停字段必须为零，不能断言或解除 Master 急停。
-- Robot 将 Master UDP 急停与兼容 HTTP `/robot/emergency-stop` 请求合并；领域语义为急停时向
-  `MAIN.Emergency_Stop_FromMaster` 写入 0，只有两个来源都释放后才写入 1。该 Beckhoff
-  变量是低有效信号。
+- Robot 将 Master UDP 急停（以及兼容 HTTP `/robot/emergency-stop` 请求）直接映射到唯一的
+  `MAIN.Emergency_Stop_FromMaster` 信号；领域语义为急停时写入 1，解除时写入 0。当前
+  TwinCAT 工程将该 DINT 定义为高有效。
+- 急停路径不停止生命周期、不清零普通运动命令，也不写 `Status_Command_FromMaster`；电机使能/停机
+  由 Beckhoff 从端的底层安全逻辑负责。
 - Master 包过期、UDP 丢包、Cloud 命令切换和普通零命令都不会自动解除已断言的急停。
 
 ### 命令保活、过期与源仲裁契约

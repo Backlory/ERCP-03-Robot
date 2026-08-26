@@ -77,14 +77,6 @@ void YunSBot::_base::ControlRunnable2(double t)
     }
     m_command_fresh = fresh;
 
-    // Force the ordinary motion command to zero while either emergency-stop
-    // authority is active. The audit field is kept asserted so status reflects
-    // the safety decision even when Cloud is the selected motion source.
-    if (EmergencyStopActive()) {
-        command = robot_udp_v3::ZeroControl();
-        command.emergency_stop = 1;
-    }
-
     // 阶段三：应用安全策略，把领域命令映射为两种 PLC 写入布局。
     const auto prepared = control_cycle::PrepareCommands(command,
                                                           fresh,

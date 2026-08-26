@@ -15,6 +15,24 @@ function Require-Text([string]$haystack, [string]$text, [string]$description) {
     }
 }
 
+function Require-NotText([string]$haystack, [string]$text, [string]$description) {
+    if ($haystack.Contains($text)) {
+        $failures.Add("Forbidden startup side effect: $description ($text)")
+    }
+}
+
+$openConnStart = $source.IndexOf('bool Beckhoff_Motor::OpenConn')
+$closeConnMarker = $source.IndexOf('bool Beckhoff_Motor::CloseConn()', $openConnStart)
+if ($openConnStart -lt 0 -or $closeConnMarker -lt 0) {
+    $failures.Add('Unable to isolate Beckhoff_Motor::OpenConn for startup safety checks')
+} else {
+    $openConn = $source.Substring($openConnStart, $closeConnMarker - $openConnStart)
+    Require-NotText $openConn 'AdsWriteControl(' `
+        'OpenConn must not change the PLC ADS runtime state'
+    Require-NotText $openConn 'ADSSTATE_RUN' `
+        'OpenConn must not request PLC RUN state'
+}
+
 foreach ($field in @(
     'Follow_Length', 'Switch_Water', 'Switch_Gas', 'Switch_Suck',
     'Big_Wheel', 'Small_Wheel', 'Force_Sensor', 'Power_level', 'lifter',
