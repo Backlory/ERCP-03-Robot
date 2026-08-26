@@ -10,6 +10,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "robot_device", "plugins\rob
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RobotUdpV3Regression", "tests\RobotUdpV3Regression\RobotUdpV3Regression.vcxproj", "{2A5B8454-C5F1-4A65-A33E-7B331993A389}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RobotTimingProbe", "tests\RobotTimingProbe\RobotTimingProbe.vcxproj", "{A8C1D5D7-8A4B-4C9E-9BF3-1C6AF2C8D7A1}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -30,6 +32,10 @@ Global
 		{DF82B80E-15E6-4B4D-B936-60AC59C58500}.Release|x64.Build.0 = Release|x64
 		{2A5B8454-C5F1-4A65-A33E-7B331993A389}.Debug|x64.ActiveCfg = Debug|x64
 		{2A5B8454-C5F1-4A65-A33E-7B331993A389}.Release|x64.ActiveCfg = Release|x64
+		{A8C1D5D7-8A4B-4C9E-9BF3-1C6AF2C8D7A1}.Debug|x64.ActiveCfg = Debug|x64
+		{A8C1D5D7-8A4B-4C9E-9BF3-1C6AF2C8D7A1}.Debug|x64.Build.0 = Debug|x64
+		{A8C1D5D7-8A4B-4C9E-9BF3-1C6AF2C8D7A1}.Release|x64.ActiveCfg = Release|x64
+		{A8C1D5D7-8A4B-4C9E-9BF3-1C6AF2C8D7A1}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

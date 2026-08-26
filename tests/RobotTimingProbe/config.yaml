@@ -1,0 +1,14 @@
+basic:
+  verbose: 0
+  master: 127.0.0.1
+  cloud: 127.0.0.1
+  bind: 127.0.0.1
+  cors_origin: ""
+  master_priority: true
+device:
+  beckhoff:
+    address: 127.0.0.1.1.1
+    port: 851
+    transport: direct
+    tcp_host: 127.0.0.1
+    tcp_port: 48898
