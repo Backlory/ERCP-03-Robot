@@ -13,7 +13,8 @@
 #include <set>
 #include <fmt/format.h>
 
-#include "Device.hpp"
+#include <boost/shared_ptr.hpp>
+#include <boost/thread/thread.hpp>
 #include "beckhoff_feedback_layout.hpp"
 #include "beckhoff_snapshot.hpp"
 #include "direct_ads_transport.hpp"

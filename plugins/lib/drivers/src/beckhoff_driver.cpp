@@ -8,6 +8,7 @@
 #include <string>
 #include <thread>
 #include <iostream>
+#include <boost/make_shared.hpp>
 #include "robot_config.h"
 #include "utils.h"
 #include "beckhoff_driver.hpp"
@@ -413,6 +414,7 @@ bool Beckhoff_Motor::EmergencyStop(bool bIsStop)
     // Domain semantics and the PLC variable use the same polarity:
     // true/1 asserts the emergency stop, false/0 releases it.
     int emergencyStopSignal = bIsStop ? 1 : 0;
+    //int emergencyStopSignal = bIsStop ? 0 : 1;
     return WriteData("MAIN.Emergency_Stop_FromMaster", 4, &emergencyStopSignal)
         == ADSERR_NOERR;
 }
@@ -507,7 +509,7 @@ bool Beckhoff_Motor::ReadAsexPos(double dAsex_Pos[19])
     return true;
 }
 // 读取编码
-bool Beckhoff_Motor::ERCPOperateState(bool state) // true = 操作中、False = 未操�?
+bool Beckhoff_Motor::ERCPOperateState(bool state) // true = 操作中、False = 未操作
 {
     return WriteData("MAIN_ERCP.bERCP_Operate_State_FromMaster", sizeof(state), &state) ==
            ADSERR_NOERR;

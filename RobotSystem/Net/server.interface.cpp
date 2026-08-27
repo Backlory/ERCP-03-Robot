@@ -4,7 +4,6 @@
 #include "server.interface.h"
 
 #include "robot_devices.h"
-#include "Device.hpp"
 #include "robot_settings.hpp"
 #include "robot_config.h"
 #include "Robot/YunSBot.h"
@@ -179,18 +178,14 @@ bool do_module_action(std::string type, std::string act)
 
 //-----------------------------------------------------------------------------
 
-std::map<std::string, std::function<device::state_t()>> device_mapper{
+std::map<std::string, std::function<int()>> device_mapper{
     {u8"云端",
      []() {
-         return YunSBot::GetInstance().situaware.IsOnline() //
-                    ? device::state_t::Online
-                    : device::state_t::Offline;
+         return YunSBot::GetInstance().situaware.IsOnline() ? 2 : 0;
      }},
     {u8"主端",
      []() {
-         return YunSBot::GetInstance().master.IsOnline() //
-                    ? device::state_t::Online
-                    : device::state_t::Offline;
+         return YunSBot::GetInstance().master.IsOnline() ? 2 : 0;
      }},
 };
 
@@ -199,7 +194,7 @@ int get_device_state(std::string type)
     if (device_mapper.find(type) == device_mapper.end()) {
         return -1;
     }
-    return (int)device_mapper.at(type)();
+    return device_mapper.at(type)();
 }
 
 } // namespace robot
