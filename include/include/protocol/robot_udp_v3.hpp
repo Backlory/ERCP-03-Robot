@@ -1,8 +1,10 @@
 // [SHARED-WIRE] Robot UDP V3 C++ protocol canonical source.
 // 该规则适用于分发副本；本文件路径是 C++ 协议定义的唯一权威源。
+// AI AGENT WARNING: This file is managed by repository-root shared-wire.
+// Outside shared-wire, do not edit it directly; edit the canonical source and run shared-wire/sync.bat.
 // SYNC-SOURCE : shared-wire/robot_udp_v3.hpp
 // SYNC-VERSION: 8
-// SYNC-RULE   : 修改后运行 tools/robot_udp_v3_sync.ps1，再执行三端黄金测试。
+// SYNC-RULE   : 修改后运行 shared-wire/sync.bat，再执行四端黄金测试。
 #pragma once
 
 #include <array>

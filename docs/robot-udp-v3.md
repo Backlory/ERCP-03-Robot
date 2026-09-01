@@ -80,16 +80,16 @@ V3 命令链路的在线与安全行为由三端共同保证：
   （`source=Master/Cloud`）；`Test(255)` 不作为任何包来源被接受。状态包内的
   active-source / applied-command source 属于 Robot 的事实回显，允许 `{0,1,2,3,255}`。
 
-### 三端实现与权威源
+### 跨端实现与权威源
 
 wire 定义唯一权威源在仓库根 `shared-wire/robot_udp_v3.hpp`（配套
-`schema/robot_udp_v3.yaml` 金标准 schema 与 `golden/*.hex` 黄金字节 fixture）。三端持有
-逐字节相同的 C++ 副本，由 `sync.bat` 整文件分发，当前 `SYNC-VERSION=8`；C# 侧
-`02-Master/ErcpApp/Interface/RobotUdpV3.cs` 无法与 C++ 共文件，手工对齐后由三端黄金测试
+`schema/robot_udp_v3.yaml` 部分机器可读补充与 `golden/*.hex` 黄金字节 fixture）。Robot 与
+Cloud 持有逐字节相同的 C++ 副本，由 `sync.bat` 整文件分发，当前 `SYNC-VERSION=8`；Master
+C# 与算法 Python codec 无法与 C++ 共文件，使用相同 sync version 与 golden fixture
 锁定字节语义（`robot_control_224.hex` / `robot_status_1200.hex`）。
 
 任何 V3 修改必须依次执行：改权威源并同步 `SYNC-VERSION` → 重生成 golden →
-`sync.bat` 分发副本 → 三端黄金测试全绿（详见 `shared-wire/README.md`）。
+`sync.bat` 分发副本 → 四端协议测试全绿（详见 `shared-wire/README.md`）。
 
 ## 当前生产 ADS 契约
 
