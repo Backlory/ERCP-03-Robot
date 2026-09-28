@@ -1,11 +1,11 @@
 # Robot UDP V3 与 Beckhoff 兼容边界
 
-## 三端通讯端口总览
+## 系统通信通道
 
-当前三端（Master / Cloud / Robot）之间共存的全部网络通道如下。除 Robot UDP V3
+当前 Master、Cloud、Robot 与 Python 算法进程之间使用的通信通道如下。除 Robot UDP V3
 （31001~31004）外，其余通道**不属于 V3 契约**，修改它们不需要动 V3 的黄金 fixture。
 
-| 端口 | 方向 | 传输 | 协议/内容 | 归属 |
+| 端口或对象 | 方向 | 传输 | 协议/内容 | 归属 |
 |---:|---|---|---|---|
 | 8990 | Master → Cloud | TCP/HTTP | JSON 控制面：模块/连接/属性/频率/流订阅（Cloud 侧 `01-Cloud-cmake/src/Server/server.cpp`） | Cloud 控制面，非 V3 |
 | 12001~12100 | Cloud → Master | UDP | SplitPacket 分片媒体流：VideoFrame(H.264) / MatFrame(FloatMatrix)；Master 经 `/port/require` 订阅，Cloud `Transmit` 推流 | 媒体流，非 V3 |
@@ -14,7 +14,7 @@
 | 31003 | Robot → Cloud | UDP | V3 状态；**仅 loopback**：Cloud 与 Robot 同机部署，Cloud `robot_status_receiver` 绑 127.0.0.1 | V3 状态通道 |
 | 31004 | Cloud → Robot | UDP | V3 命令；**仅 loopback**：Robot `situaware` 通道绑 127.0.0.1 | V3 命令通道 |
 | 7998 | Master/其它 → Robot | TCP/HTTP | JSON 控制接口（`RobotSystem/Net/server.*`，Robot 进程入口 `RobotSystem/main.cpp` 承载） | Robot 控制 HTTP，非 V3 |
-| 14001 / 14002 | Cloud ↔ 外部进程 | UDP | 回环媒体流（同款 VideoFrame/MatFrame 信封），Cloud 本地 `ExternalProcModule` 专用 | Cloud 本地，非三端协议 |
+| Windows 命名共享对象 | Cloud ↔ Python 算法 | 共享内存、Mutex、Event | `ExternalAutoModule` 的 input、command、ui 三份 mailbox；控制内容采用 224 字节 Robot UDP V3.1 格式 | Cloud 本地进程间通信 |
 | 48898 | Robot → PLC | TCP/ADS | Beckhoff ADS over TCP（AMS runtime 端口 851），即下文"当前生产 ADS 契约" | 设备侧，非 V3 |
 
 部署约束：Cloud 与 Robot **必须同机部署**，31003/31004 强制走 127.0.0.1 回环，不可拆机；
@@ -88,6 +88,11 @@ Cloud 持有逐字节相同的 C++ 副本，由 `sync.bat` 整文件分发，当
 C# 与算法 Python codec 无法与 C++ 共文件，使用相同 sync version 与 golden fixture
 锁定字节语义（`robot_control_224.hex` / `robot_status_1200.hex`）。
 
+完整报文的绝对字节偏移和字段含义见
+[Robot UDP V3.1 接口](../../shared-wire/ROBOT_UDP_V3_1.md)。现有状态报文已经包含
+10 路 `force_sensor`、`deliver_force`、`follow_force`、`ercp_deliver_force`、
+`guide_wire_force` 和 `bow_force`。保留组要求全零，完整状态报文占满 1200 字节。
+
 任何 V3 修改必须依次执行：改权威源并同步 `SYNC-VERSION` → 重生成 golden →
 `sync.bat` 分发副本 → 四端协议测试全绿（详见 `shared-wire/README.md`）。
 
@@ -122,11 +127,8 @@ C# 与算法 Python codec 无法与 C++ 共文件，使用相同 sync version �
   `MAIN.Follow_Control_Cmd`；operate/cooperate、6D handle、3 buttons 和双注射器
   离散命令仍仅在台车 online 且 ready 时写入，否则实际写入/回显为零；
 - 注射状态为完成（11）时，相应注射使能强制为 `FALSE`。
-- Balloon pressure、operator position。
-
-这些字段在 V3 状态中暂按零值/未知值上报，在 applied-command 中不得伪报为已经写入。
-只有获得生产 TwinCAT 符号表和精确 ABI（符号名、类型、数组下标、结构对齐与总长度），
-并新增生产契约回归后，才能逐项启用。
+- ERCP 台车的 `Balloon_Pressure` 和 `Operator_Pos` 与其他反馈叶字段一同通过 ADS
+  读取，分别写入状态报文的 `balloon_pressure` 和 `operator_position`；单项读取失败时该字段清零。
 
 静态门禁：
 
