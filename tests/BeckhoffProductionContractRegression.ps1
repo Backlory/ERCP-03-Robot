@@ -70,9 +70,9 @@ Require-Text $source 'MAIN.Info_Feedback_ToMaster.Force_Sensor[' 'force sensor e
 Require-Text $source 'kErcpAvailabilitySymbol' 'ERCP interface availability probe symbol'
 Require-Text $source 'POU_Ercp_CycleExecute.Ercp_Ready_State' 'ERCP readiness probe symbol'
 Require-Text $source 'FormatAdsReadFailures' 'shared per-leaf ADS error formatter'
-Require-Text $source 'Beckhoff ERCP state leaf fields unavailable' `
+Require-Text $source 'ReportAdsReadFailures("ERCP state", result, failureDetails, lastFailureDetails)' `
     'ERCP state missing-symbol diagnostics'
-Require-Text $source 'Beckhoff ERCP feedback leaf fields unavailable' `
+Require-Text $source 'ReportAdsReadFailures("ERCP feedback", result, failureDetails, lastFailureDetails)' `
     'ERCP feedback missing-symbol diagnostics'
 Require-Text $source 'Beckhoff ERCP availability gate unavailable' `
     'ERCP readiness gate diagnostics'

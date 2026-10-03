@@ -71,6 +71,21 @@ std::string FormatAdsReadFailures(const RequestContainer &requests,
     return failures.str();
 }
 
+// 功能：记录状态组读取失败或恢复；输入：组名、ADS 结果、失败明细和上次明细；输出：日志并更新上次明细。
+void ReportAdsReadFailures(const char *group,
+                          std::uint32_t result,
+                          const std::string &failureDetails,
+                          std::string &lastFailureDetails)
+{
+    if (!failureDetails.empty() && failureDetails != lastFailureDetails) {
+        ROBOT_ERROR(true, "Beckhoff " << group
+                    << " leaf fields unavailable; publishing successful fields: " << failureDetails)
+    } else if (result == ADSERR_NOERR && !lastFailureDetails.empty()) {
+        ROBOT_INFO(true, "Beckhoff " << group << " leaf reads recovered; all fields are readable.")
+    }
+    lastFailureDetails = failureDetails;
+}
+
 constexpr std::size_t kMainMotorErrorCount = 19;
 constexpr std::size_t kCommonBaseRequestCount = 3 + kMainMotorErrorCount;
 constexpr std::size_t kCommonRequestCount =
@@ -916,14 +931,7 @@ void Beckhoff_Motor::PollCommonSnapshot(BeckhoffSnapshot &next,
         }
     }
     const auto failureDetails = FormatAdsReadFailures(requests, requestCount, itemErrors);
-    if (!failureDetails.empty() && failureDetails != lastFailureDetails) {
-        ROBOT_ERROR(true,
-                    "Beckhoff Common leaf fields unavailable; publishing successful fields: "
-                        << failureDetails)
-    } else if (commonError == ADSERR_NOERR && !lastFailureDetails.empty()) {
-        ROBOT_INFO(true, "Beckhoff Common leaf reads recovered; all fields are readable.")
-    }
-    lastFailureDetails = failureDetails;
+    ReportAdsReadFailures("Common", commonError, failureDetails, lastFailureDetails);
 
     next.common_ads_error = commonError;
     KeepFirstError(next.overall_ads_error, commonError);
@@ -977,14 +985,7 @@ std::uint32_t Beckhoff_Motor::PollErcpState(BeckhoffSnapshot &next,
     std::array<std::uint32_t, requests.size()> errors{};
     const auto result = ReadDataBatch(requests.data(), requestCount, errors.data());
     const auto failureDetails = FormatAdsReadFailures(requests, requestCount, errors);
-    if (!failureDetails.empty() && failureDetails != lastFailureDetails) {
-        ROBOT_ERROR(true,
-                    "Beckhoff ERCP state leaf fields unavailable; publishing successful fields: "
-                        << failureDetails)
-    } else if (result == ADSERR_NOERR && !lastFailureDetails.empty()) {
-        ROBOT_INFO(true, "Beckhoff ERCP state leaf reads recovered; all fields are readable.")
-    }
-    lastFailureDetails = failureDetails;
+    ReportAdsReadFailures("ERCP state", result, failureDetails, lastFailureDetails);
     next.ercp_state_ads_error = result;
     KeepFirstError(next.overall_ads_error, result);
     next.ercp_flags = static_cast<std::uint16_t>(
@@ -1044,14 +1045,7 @@ std::uint32_t Beckhoff_Motor::PollErcpFeedback(BeckhoffSnapshot &next,
     std::array<std::uint32_t, requests.size()> errors{};
     const auto result = ReadDataBatch(requests.data(), requests.size(), errors.data());
     const auto failureDetails = FormatAdsReadFailures(requests, requests.size(), errors);
-    if (!failureDetails.empty() && failureDetails != lastFailureDetails) {
-        ROBOT_ERROR(true,
-                    "Beckhoff ERCP feedback leaf fields unavailable; publishing successful fields: "
-                        << failureDetails)
-    } else if (result == ADSERR_NOERR && !lastFailureDetails.empty()) {
-        ROBOT_INFO(true, "Beckhoff ERCP feedback leaf reads recovered; all fields are readable.")
-    }
-    lastFailureDetails = failureDetails;
+    ReportAdsReadFailures("ERCP feedback", result, failureDetails, lastFailureDetails);
     next.ercp_feedback_ads_error = result;
     KeepFirstError(next.overall_ads_error, result);
     next.ercp_deliver_force = errors[0] == ADSERR_NOERR ? deliverForce : 0;
