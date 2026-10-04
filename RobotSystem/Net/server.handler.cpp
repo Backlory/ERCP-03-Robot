@@ -5,6 +5,20 @@
 
 using namespace server;
 
+Json MakeModuleFailureJson(const module::FailureInfo &failure)
+{
+    Json error;
+    error.set("active", failure.active);
+    error.set("time_unix_ns", failure.time_unix_ns);
+    error.set("task", failure.task_name);
+    error.set("step", failure.failed_step);
+    error.set("reason", failure.reason);
+    Json report;
+    for (const auto &step : failure.report) report.set(step.first, step.second);
+    error.set("report", report);
+    return error;
+}
+
 /** 将允许的 JSON 类型列表转换为校验错误中的类型名称。 */
 std::string format_types(const type_list &types)
 {
@@ -83,12 +97,15 @@ public:
         d.set("time", robot::get_time());
         Json modules;
         Json steps;
+        Json errors;
         for (const auto &module : robot::get_modules()) {
             modules.set(module, robot::get_module_state(module));
             steps.set(module, robot::get_module_step(module));
+            errors.set(module, MakeModuleFailureJson(robot::get_module_failure(module)));
         }
         d.set("modules", modules);
         d.set("step", steps);
+        d.set("errors", errors);
         return d;
     }
 };
@@ -263,23 +280,23 @@ public:
     }
 };
 
-/** 注册机器人生命周期、模块动作、配置、传感器目录和设备连接状态接口。 */
+/** 注册机器人生命周期、模块动作和诊断接口。 */
 Handler::Handler()
 {
     using vt = decltype(handlers)::mapped_type;
     handlers.emplace("robot",
-                     vt{{"info", std::make_shared<robot_info>()},
-                        {"log", std::make_shared<robot_log>()},
+                     vt{{"log", std::make_shared<robot_log>()},
                         {"status", std::make_shared<robot_state>()},
                         {"action", std::make_shared<robot_action>()},
                         {"init", std::make_shared<robot_init>(true)},
-                        {"close", std::make_shared<robot_init>(false)},
-                        {"emergency-stop", std::make_shared<robot_emergency_stop>()},
-                        {"forcerecord", std::make_shared<robot_force_record>()}});
-    handlers.emplace("settings",
-                     vt{{"/", std::make_shared<settings_base>()},
-                        {"data", std::make_shared<settings_data>()},
-                        {"update", std::make_shared<settings_update>()}});
-    handlers.emplace("sensio", vt{{"/", std::make_shared<sensio_base>()}});
-    handlers.emplace("beckhoff", vt{{"isopen", std::make_shared<beckhoff_isopen>()}});
+                        {"close", std::make_shared<robot_init>(false)}});
+    // TODO：以下接口具有实际行为，当前工程内尚未发现调用方；确认使用场景后再启用。
+    // handlers.at("robot").emplace("info", std::make_shared<robot_info>());
+    // handlers.at("robot").emplace("emergency-stop", std::make_shared<robot_emergency_stop>());
+    // handlers.at("robot").emplace("forcerecord", std::make_shared<robot_force_record>());
+    // handlers.emplace("settings", vt{{"/", std::make_shared<settings_base>()},
+    //                                 {"data", std::make_shared<settings_data>()},
+    //                                 {"update", std::make_shared<settings_update>()}});
+    // handlers.emplace("sensio", vt{{"/", std::make_shared<sensio_base>()}});
+    // handlers.emplace("beckhoff", vt{{"isopen", std::make_shared<beckhoff_isopen>()}});
 }

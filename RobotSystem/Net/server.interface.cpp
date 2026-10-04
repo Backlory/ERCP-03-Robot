@@ -94,6 +94,7 @@ int get_module_state(std::string type)
 {
     if (type == "arm") {
         auto &arm = rpc::ArmModule::GetInstance();
+        if (arm.GetModuleState() == module::module_state::S_Error) return 1;
         if (arm.IsBusy()) {
             return 3;
         }
@@ -109,6 +110,12 @@ std::string get_module_step(std::string type)
         return rpc::GetProcessName(arm.get_current_state());
     }
     return "Unknow";
+}
+
+module::FailureInfo get_module_failure(const std::string &type)
+{
+    if (type == "arm") return rpc::ArmModule::GetInstance().GetFailure();
+    throw std::invalid_argument("Unknown module: " + type);
 }
 
 std::vector<std::string> get_module_actions()
@@ -151,25 +158,6 @@ bool do_module_action(std::string type, std::string act)
 
 //-----------------------------------------------------------------------------
 
-std::map<std::string, std::function<int()>> device_mapper{
-    {u8"云端",
-     []() {
-         return YunSBot::GetInstance().situaware.IsOnline() ? 2 : 0;
-     }},
-    {u8"主端",
-     []() {
-         return YunSBot::GetInstance().master.IsOnline() ? 2 : 0;
-     }},
-};
-
-int get_device_state(std::string type)
-{
-    if (device_mapper.find(type) == device_mapper.end()) {
-        return -1;
-    }
-    return device_mapper.at(type)();
-}
-
 } // namespace robot
 
 //-----------------------------------------------------------------------------
@@ -204,44 +192,12 @@ bool update_settings(std::string config)
 
 namespace sensor {
 
-double force()
-{
-    return GetRobot().GetScopeForce();
-}
-
-double torque()
-{
-    return GetRobot().GetScopeTorque();
-}
-
-double cannula_force()
-{
-    return GetRobot().GetCannulaForce();
-}
-
-double wire_force()
-{
-    return GetRobot().GetWireForce();
-}
-
-double operator_force()
-{
-    return GetRobot().GetHandleForce();
-}
-
 std::map<int, std::string> sensors_name{//
                                         {3, u8"操作器 / 拉压力"},
                                         {4, u8"切开刀 / 输送力"},
                                         {5, u8"导丝 / 输送力"},
                                         {6, u8"镜体 / 输送力"},
                                         {7, u8"镜体 / 旋转扭矩"}};
-
-std::map<int, std::function<double()>> sensors_api{//
-                                                   {3, operator_force},
-                                                   {4, cannula_force},
-                                                   {5, wire_force},
-                                                   {6, force},
-                                                   {7, torque}};
 
 std::vector<int> get_sensors()
 {
@@ -258,14 +214,6 @@ std::string get_sensor_name(int id)
         return sensors_name.at(id);
     }
     return "";
-}
-
-double get_sensor_value(int id)
-{
-    if (sensors_api.find(id) != sensors_api.end()) {
-        return sensors_api.at(id)();
-    }
-    return 0;
 }
 
 } // namespace sensor

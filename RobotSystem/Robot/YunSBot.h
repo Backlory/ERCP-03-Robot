@@ -72,14 +72,9 @@ public:
 
         std::string GetStartInfo() const;
         std::string GetStopInfo() const;
-        boost::shared_ptr<boost::thread> GetWorker() { return m_bg_worker; }
-
-        std::vector<std::pair<std::wstring, int>> GetStartReportW() const;
-        std::vector<std::pair<std::wstring, int>> GetStopReportW() const;
         std::vector<std::pair<std::string, int>> GetStartReport() const;
         std::vector<std::pair<std::string, int>> GetStopReport() const;
 
-        boost::asio::io_service &GetIOServer();
 
     public:
         boost::signals2::signal<void(void)> BeforeRobotStarting;
@@ -89,7 +84,6 @@ public:
         boost::signals2::signal<void(void)> BeforeRobotStopping;
         boost::signals2::signal<void(void)> OnRobotStopFailed;
         boost::signals2::signal<void(void)> OnRobotStopEnd;
-        boost::function<void(void)> OnRobotStopped;
 
     protected:
         _base(YunSBot &p);
@@ -136,9 +130,6 @@ public:
         boost::shared_ptr<boost::thread> m_ctrl_worker = nullptr;
         boost::signals2::signal<void(double)> OnControl;
 
-        boost::asio::io_service io_service;
-        boost::shared_ptr<boost::asio::io_service::work> work;
-        boost::shared_ptr<std::thread> worker;
 
         mutable std::mutex m_log_mutex;
         std::shared_ptr<ilsr::Logger> m_logger;

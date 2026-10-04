@@ -21,11 +21,6 @@ public:
 
 public:
     // 力传感器
-    double GetHandleForce(double overtime = 0.1) const override;
-    double GetScopeForce(double overtime = 0.1) const override;
-    double GetScopeTorque(double overtime = 0.1) const override;
-    double GetCannulaForce(double overtime = 0.1) const override;
-    double GetWireForce(double overtime = 0.1) const override;
 
     //// 倍福
 
@@ -44,7 +39,6 @@ public:
     device::beckhoff::BeckhoffSnapshot BeckhoffSnapshot() const override;
 
     // ERCP
-    bool BeckhoffERCPOperateState(bool state) const override;
     bool BeckhoffIsERCPOnline() const override;
     bool BeckhoffIsERCPReady() const override;
     bool BeckhoffEmergencyStop(bool active) const override;

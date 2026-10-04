@@ -44,7 +44,7 @@ std::string rpc::GetProcessName(arm_state_t to)
 
 /**
  * @brief 功能：为机械臂状态机生成从当前状态到目标状态的可执行任务。
- * @details 机制：根据起止状态选择 Beckhoff 动作、等待反馈并在失败时抛出任务异常，交由状态机统一处理重试和救援。
+ * @details 每次创建新任务和独立报告；动作或等待失败后停止后续步骤并保存诊断。
  */
 std::function<void()> ArmModule::MakeTask(const state_t &from, const state_t &to)
 {
@@ -60,7 +60,7 @@ std::function<void()> ArmModule::MakeTask(const state_t &from, const state_t &to
         t = 3;
         auto seq = MoveBeckhoffTo(u8"折叠", false);
         seq->emplace(u8"转移", [this, verbose]() {
-            if (!this->PostAsyncEvent(ex_signal{s::s_folded})) {
+            if (!this->ApplyTaskEvent<ArmModule>(ex_signal{s::s_folded})) {
                 throw error::normal_error("transition failed.");
             }
             return true;
@@ -70,7 +70,7 @@ std::function<void()> ArmModule::MakeTask(const state_t &from, const state_t &to
         t = 4;
         auto seq = MoveBeckhoffTo(u8"打开", true);
         seq->emplace(u8"转移", [this, verbose]() {
-            if (!this->PostAsyncEvent(ex_signal{s::s_opened})) {
+            if (!this->ApplyTaskEvent<ArmModule>(ex_signal{s::s_opened})) {
                 throw error::normal_error("transition failed.");
             }
             return true;
@@ -80,14 +80,16 @@ std::function<void()> ArmModule::MakeTask(const state_t &from, const state_t &to
         t = 5;
         auto seq = std::make_shared<task::SequentialTasks<>>(u8"启动跟随");
         seq->emplace(u8"设置跟随状态", [this, verbose]() {
-            return GetRobot().BeckhoffArmOperation(beckhoff_arm_operation::BAO_FOLLOW);
+            return ExecuteMotion([]() {
+                return GetRobot().BeckhoffArmOperation(beckhoff_arm_operation::BAO_FOLLOW);
+            });
         });
         ptr = seq;
     } else {
         t = 6;
         auto seq = std::make_shared<task::SequentialTasks<>>(u8"请求转移");
         seq->emplace(u8"转移", [this, verbose]() {
-            if (!this->PostAsyncEvent(ex_signal{s::s_opened})) {
+            if (!this->ApplyTaskEvent<ArmModule>(ex_signal{s::s_opened})) {
                 throw error::normal_error("transition failed.");
             }
             return true;
@@ -108,27 +110,26 @@ task::seque_ptr<> ArmModule::MoveBeckhoffTo(std::string name, const bool bIsOpen
     auto seq = std::make_shared<task::SequentialTasks<>>(name);
 
     seq->emplace(u8"执行", [this, verbose, bIsOpen]() {
-        auto &robot = ercp::GetRobot();
-        return robot.BeckhoffMoveArmTo(bIsOpen);
+        return ExecuteMotion([bIsOpen]() {
+            return ercp::GetRobot().BeckhoffMoveArmTo(bIsOpen);
+        });
     });
 
     seq->emplace(u8"等待", [this, verbose, bIsOpen]() {
         auto &robot = ercp::GetRobot();
-        // L1: 等待 PLC 到位加 30s 上限,超时返回失败(经 M1 机制上提为
-        // 信封 status:false),不再无限死循环阻塞 HTTP 工作线程。
+        // 等待反馈期间检查任务批次，停止或暂停后结束轮询。
         const auto deadline = boost::chrono::steady_clock::now() + boost::chrono::seconds(30);
         while (true) {
             boost::this_thread::sleep_for(boost::chrono::milliseconds(100));
+            RequireCurrentTask();
             int iState = robot.BeckhoffArmMoveState();
             if ((bIsOpen && beckhoff_arm_move_state::BAMS_OPENED == iState) ||
                 (!bIsOpen && beckhoff_arm_move_state::BAMS_FOLDED == iState)) {
                 break;
             }
             if (boost::chrono::steady_clock::now() >= deadline) {
-                ROBOT_ERROR(true,
-                            fmt::format("Beckhoff arm move to `{}` timed out after 30s.",
-                                        bIsOpen ? "open" : "fold"))
-                return false;
+                throw error::normal_error(fmt::format(
+                    "Beckhoff arm move to `{}` timed out after 30s.", bIsOpen ? "open" : "fold"));
             }
         }
         return true;

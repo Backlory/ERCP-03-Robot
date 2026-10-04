@@ -14,18 +14,14 @@ extern bool PrepareStopFollow();
 
 namespace rpc {
 ArmModule::ArmModule()
-    : FsmArm("ArmModule", t::A1_NotInit, 0.008, 1.0, GetSettings().Basic.Verbose())
+    : FsmArm("ArmModule", t::A1_NotInit)
 {
 }
 
 bool ArmModule::FollowStartCheck(const ex_trigger &) const
 {
-    return PrepareForFollow();
-}
-
-bool ArmModule::FollowStopCheck(const ex_trigger &) const
-{
-    return PrepareStopFollow();
+    if (!PrepareForFollow()) throw error::normal_error("Cannot start arm follow.");
+    return true;
 }
 
 bool ArmModule::Initialize()
@@ -35,29 +31,32 @@ bool ArmModule::Initialize()
 
 bool ArmModule::DeInitialize()
 {
-    return this->PostAsyncEvent(ex_signal{s::s_deinitialized});
+    return ExecuteStop([this]() {
+        this->m_state = state_t::A1_NotInit;
+        return true;
+    });
 }
 
 bool ArmModule::StartFollow()
 {
+    if (!IsRunning()) return false;
     // The PLC feedback is authoritative. If a previous command left the RPC
     // state at A5 while the arm is physically back at state 21, reconcile the
     // internal state before interpreting this click as "start follow".
     if (!SynchronizeWithBeckhoffFeedback()) {
         return false;
     }
+    if (get_current_state() == state_t::A5_Following) return true;
     return this->PostAsyncEvent(ex_trigger{});
 }
 
 bool ArmModule::StopFollow()
 {
-    // Likewise, a state-31 feedback can arrive while the RPC state is still
-    // A2/A4. Reconcile it to A5 so this command is interpreted as "exit
-    // follow", not as another start-follow trigger from A4.
-    if (!SynchronizeWithBeckhoffFeedback()) {
-        return false;
-    }
-    return this->PostAsyncEvent(ex_trigger{});
+    return ExecuteStop([this]() {
+        if (!PrepareStopFollow()) return false;
+        this->m_state = state_t::A4_Opened;
+        return true;
+    });
 }
 
 /**
@@ -144,6 +143,7 @@ bool ArmModule::IsConnected(state_t to)
  */
 bool ArmModule::GotoState(state_t state)
 {
+    if (!IsRunning()) return false;
     // Reconcile stale RPC state with the physical Beckhoff feedback before
     // checking the transition graph. The reconciliation itself never writes
     // a PLC command.
@@ -162,44 +162,6 @@ bool ArmModule::GotoState(state_t state)
         return PostTask(MakeTask(get_current_state(), state));
     }
     return false;
-}
-
-/**
- * @brief 功能：处理状态转移异常，按错误类型尝试恢复或记录最终失败。
- * @details 机制：提取异常并调用 error::solution；可恢复且重试次数未超限时重新提交任务，否则保留错误状态。
- */
-bool ArmModule::OnError(const transition_error &error)
-{
-    try {
-        boost::rethrow_exception(error.except_ptr);
-
-    } catch (error::action::action_error &e) {
-        ROBOT_INFO(_verbose > 0, e.what());
-        if (m_retry < 3 && error::solution(e)) {
-            ROBOT_INFO(_verbose > 1, "solution true");
-            // Cause async retry the state.
-            auto state = get_current_state();
-            // OnPostTransition(state, state);
-            m_retry++;
-            ClearFaults();
-            PostTask(FsmArm::MakeTask(e.m_task));
-            return true;
-        }
-        ROBOT_INFO(_verbose > 1, "solution false");
-    } catch (std::exception e) {
-    }
-    m_retry = 0;
-    return false;
-}
-
-bool ArmModule::OnRescue(const transition_rescue &)
-{
-    return true;
-}
-
-int ArmModule::GetErrorCode(const boost::exception_ptr &_exception) const
-{
-    return -1;
 }
 
 std::string ArmModule::GetStateName(const state_t &state) const

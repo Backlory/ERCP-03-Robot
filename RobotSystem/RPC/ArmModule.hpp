@@ -23,7 +23,7 @@ enum class arm_signal_t {
 
 std::string GetProcessName(arm_state_t state);
 
-using FsmArm = module::Module<arm_state_t, int, true>;
+using FsmArm = module::Module<arm_state_t>;
 
 class ArmModule : public FsmArm {
 
@@ -42,6 +42,7 @@ public:
     bool DeInitialize();
     bool StartFollow();
     bool StopFollow();
+    ~ArmModule() { Shutdown(); }
 
 public:
     std::string GetStateName(const state_t &state) const override;
@@ -56,15 +57,10 @@ private:
 
     bool IsConnected(state_t to);
     bool SynchronizeWithBeckhoffFeedback();
-    bool OnError(const transition_error &) override;
-    bool OnRescue(const transition_rescue &) override;
-    int GetErrorCode(const boost::exception_ptr &_exception) const override;
 
 protected:
     ArmModule();
     ArmModule(const ArmModule &) = delete;
-
-    //task::seque_ptr<> MoveArmTo(std::string name, const Eigen::Vector3d joints);
 
     task::seque_ptr<> MoveBeckhoffTo(std::string name, const bool bIsOpen);
 
@@ -83,7 +79,6 @@ protected:
     }
 
     bool FollowStartCheck(const ex_trigger &) const;
-    bool FollowStopCheck(const ex_trigger &) const;
 
 protected:
     // Adaptive for secondary derived class
@@ -113,7 +108,6 @@ protected:
             transition_sp< t::A5_Following,      ex_signal,          t::A3_Folded,       nullptr,  &ArmModule::SignalCheck<s::s_folded>>,
             transition_sp< t::A4_Opened,         ex_trigger,         t::A5_Following,    nullptr,  &ArmModule::FollowStartCheck>,
             transition_sp< t::A2_Inited,         ex_trigger,          t::A5_Following,      nullptr,  &ArmModule::FollowStartCheck>,
-            transition_sp< t::A5_Following,      ex_trigger,         t::A4_Opened,       nullptr,  &ArmModule::FollowStopCheck>,
             transition_sp< t::A4_Opened,         ex_signal,          t::A3_Folded,       nullptr,  &ArmModule::SignalCheck<s::s_folded>>,
             transition_sp< t::A3_Folded,         ex_signal,          t::A2_Inited,       nullptr,  &ArmModule::SignalCheck<s::s_initialized>>,
             transition_sp< t::A2_Inited,         ex_signal,          t::A1_NotInit,      nullptr,  &ArmModule::SignalCheck<s::s_deinitialized>>,

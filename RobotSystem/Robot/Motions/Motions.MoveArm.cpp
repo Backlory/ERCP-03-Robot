@@ -17,8 +17,7 @@ bool PrepareForFollow()
         return false;
     }
 
-    robot.BeckhoffArmOperation(beckhoff_arm_operation::BAO_FOLLOW);
-    return true;
+    return robot.BeckhoffArmOperation(beckhoff_arm_operation::BAO_FOLLOW);
 }
 
 /**
@@ -32,8 +31,7 @@ bool PrepareStopFollow()
         return false;
     }
 
-    robot.BeckhoffArmOperation(beckhoff_arm_operation::BAO_OPEN);
-    return true;
+    return robot.BeckhoffArmOperation(beckhoff_arm_operation::BAO_OPEN);
 }
 
 } // namespace ercp

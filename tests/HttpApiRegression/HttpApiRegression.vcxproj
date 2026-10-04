@@ -44,6 +44,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="main.cpp" />
+    <ClCompile Include="task_failure_tests.cpp" />
     <ClCompile Include="..\..\RobotSystem\Net\server.cpp" />
     <ClCompile Include="..\..\RobotSystem\Net\server.handler.cpp" />
     <ClCompile Include="..\..\RobotSystem\Net\server.interface.cpp" />

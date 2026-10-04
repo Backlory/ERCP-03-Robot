@@ -13,6 +13,9 @@ using Request = Poco::Net::HTTPServerRequest;
 using Response = Poco::Net::HTTPServerResponse;
 using Json = Poco::JSON::Object;
 
+namespace module { struct FailureInfo; }
+Json MakeModuleFailureJson(const module::FailureInfo &failure);
+
 /// M1: handler 业务失败时用该键携带失败原因(字符串);
 /// handleRequest 将其上提为信封 status=false + info,并从 data 中移除该键。
 /// data 内的 status 字段保留,兼容只读内层结果的旧客户端。

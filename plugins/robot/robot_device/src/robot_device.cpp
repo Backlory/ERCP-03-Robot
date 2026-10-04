@@ -76,43 +76,6 @@ _RobotDevice::~_RobotDevice() = default;
 
 /////////////////////////////////////////////////////////////////////////
 
-double _RobotDevice::GetHandleForce(double overtime) const
-{
-    //double f = 0;
-    //m_handle_force && m_handle_force->GetForce(f, overtime);
-    // return f;
-
-    return beckhoff::Beckhoff_Motor::GetInstance().Force(2);
-}
-
-double _RobotDevice::GetScopeForce(double overtime) const
-{
-    //std::array<double, 1> _tmp;
-    //return (m_scope_force && m_scope_force->GetData(_tmp, overtime)) ? _tmp[0] : 0;
-    return beckhoff::Beckhoff_Motor::GetInstance().DeliverForce();
-}
-
-double _RobotDevice::GetScopeTorque(double overtime) const
-{
-    //std::array<double, 1> _tmp;
-    //return (m_scope_torque && m_scope_torque->GetData(_tmp, overtime)) ? _tmp[0] : 0;
-    return beckhoff::Beckhoff_Motor::GetInstance().Force(2);
-}
-
-double _RobotDevice::GetCannulaForce(double overtime) const
-{
-    //std::array<double, 1> _tmp;
-    //return (m_cannula_force && m_cannula_force->GetData(_tmp, overtime)) ? _tmp[0] : 0;
-    return beckhoff::Beckhoff_Motor::GetInstance().Force(2);
-}
-
-double _RobotDevice::GetWireForce(double overtime) const
-{
-    //std::array<double, 1> _tmp;
-    //return (m_wire_force && m_wire_force->GetData(_tmp, overtime)) ? _tmp[0] : 0;
-    return beckhoff::Beckhoff_Motor::GetInstance().Force(2);
-}
-
 bool _RobotDevice::BeckhoffMoveArmTo(bool bIsOpen) const
 {
     return beckhoff::Beckhoff_Motor::GetInstance().MoveArmTo(bIsOpen);
@@ -163,10 +126,6 @@ device::beckhoff::BeckhoffSnapshot _RobotDevice::BeckhoffSnapshot() const
 }
 
 // ERCP
-bool _RobotDevice::BeckhoffERCPOperateState(bool state) const
-{
-    return beckhoff::Beckhoff_Motor::GetInstance().ERCPOperateState(state);
-}
 bool _RobotDevice::BeckhoffIsERCPOnline() const
 {
     return beckhoff::Beckhoff_Motor::GetInstance().IsERCPOnline();

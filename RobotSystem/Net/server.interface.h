@@ -2,6 +2,7 @@
 #include <vector>
 #include <string>
 #include "yunsbot_config.h"
+#include "RPC/Module.hpp"
 
 namespace server {
 
@@ -26,11 +27,11 @@ double force_record();
 std::vector<std::string> get_modules();
 int get_module_state(std::string);
 std::string get_module_step(std::string);
+module::FailureInfo get_module_failure(const std::string &type);
 
 std::vector<std::string> get_module_actions();
 bool do_module_action(std::string, std::string);
 
-int get_device_state(std::string);
 
 } // namespace robot
 
@@ -46,7 +47,6 @@ namespace sensor {
 
 std::vector<int> get_sensors();
 std::string get_sensor_name(int id);
-double get_sensor_value(int id);
 
 } // namespace sensor
 

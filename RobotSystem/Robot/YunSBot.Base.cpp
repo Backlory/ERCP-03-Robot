@@ -90,26 +90,16 @@ YunSBot::_base::_base(YunSBot &p)
     OnRobotStopFailed.connect([&]() { StartControlThreads(); });
     OnRobotStopEnd.connect([&]() { m_lifecycle_changed_unix_ns = robot_udp_v3::UnixNowNs(); });
 
-    work = boost::make_shared<boost::asio::io_service::work>(this->io_service);
 }
 
 /**
- * @brief 功能：启动机器人后台周期线程和 Asio IO 线程。
- * @details 机制：后台线程运行通用周期循环，IO 线程运行 io_service；两者异常分别记录，不改变既有调度周期。
+ * @brief 启动机器人反馈采集和状态发布的后台周期线程。
  */
 void YunSBot::_base::StartThreads()
 {
     m_bg_worker = boost::make_shared<boost::thread>(
         [this]() { RunPeriodicLoop("BgAuto", 0.020, OnBackground); });
 
-    worker = boost::make_shared<std::thread>([this]() {
-        try {
-            boost::system::error_code ec;
-            io_service.run(ec);
-        } catch (std::exception e) {
-            ROBOT_ERROR(true, "IO context: " << e.what())
-        }
-    });
 }
 
 /**
@@ -158,15 +148,11 @@ void YunSBot::_base::ExitControlThreads()
 }
 
 /**
- * @brief 关闭 RobotSystem 基类持有的 IO、后台线程和未完成生命周期任务。
- * @details 先停止 Asio 工作，再中断后台线程；若机器人仍在运行则排队停止并等待其 future 完成。
+ * @brief 停止后台线程，并等待机器人生命周期任务完成。
  */
 YunSBot::_base::~_base()
 
 {
-    work.reset();
-    io_service.reset();
-
     // Stop worker
     if (m_bg_worker) {
         m_bg_worker->interrupt();
@@ -301,8 +287,6 @@ bool YunSBot::_base::ExecuteStop()
     ROBOT_INFO(true, "Robot stopped.")
     ROBOT_INFO(true, GetStopInfo());
     m_RobotStarted = false;
-    if (OnRobotStopped)
-        OnRobotStopped();
     OnRobotStopEnd();
     m_RobotStopping = false;
     m_init_report.clear();
@@ -334,26 +318,6 @@ std::vector<std::pair<std::string, int>> YunSBot::_base::GetStopReport() const
     std::vector<std::pair<std::string, int>> map;
     for (auto p : m_deinit_report) {
         map.emplace_back(p);
-    }
-    return map;
-}
-
-std::vector<std::pair<std::wstring, int>> YunSBot::_base::GetStartReportW() const
-{
-    std::lock_guard<decltype(m_report_mutex)> lock(m_report_mutex);
-    std::vector<std::pair<std::wstring, int>> map;
-    for (auto p : m_init_report) {
-        map.emplace_back(ilsr::convert(p.first), p.second);
-    }
-    return map;
-}
-
-std::vector<std::pair<std::wstring, int>> YunSBot::_base::GetStopReportW() const
-{
-    std::lock_guard<decltype(m_report_mutex)> lock(m_report_mutex);
-    std::vector<std::pair<std::wstring, int>> map;
-    for (auto p : m_deinit_report) {
-        map.emplace_back(ilsr::convert(p.first), p.second);
     }
     return map;
 }
@@ -431,11 +395,6 @@ bool YunSBot::_base::SetRpcEmergencyStop(bool active)
 {
     std::lock_guard<std::mutex> lock(m_emergency_stop_mutex);
     return ApplyEmergencyStopLocked(active);
-}
-
-boost::asio::io_service &YunSBot::_base::GetIOServer()
-{
-    return io_service;
 }
 
 bool YunSBot::_base::SwitchAutoMode(bool enable)

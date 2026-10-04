@@ -11,13 +11,6 @@ namespace ercp {
 
 class RobotDevice {
 public:
-    // 力传感器
-    virtual double GetHandleForce(double overtime = 0.1) const = 0;
-    virtual double GetScopeForce(double overtime = 0.1) const = 0;
-    virtual double GetScopeTorque(double overtime = 0.1) const = 0;
-    virtual double GetCannulaForce(double overtime = 0.1) const = 0;
-    virtual double GetWireForce(double overtime = 0.1) const = 0;
-
     // 倍福
 
     // 展开或折叠
@@ -36,16 +29,12 @@ public:
     virtual double BeckhoffForce(INT16 iPos) const = 0;
 
     //ERCP
-    virtual bool BeckhoffERCPOperateState(bool state) const = 0;
     virtual bool BeckhoffIsERCPOnline() const = 0;
     virtual bool BeckhoffIsERCPReady() const = 0;
     // Emergency stop is deliberately separate from the normal UDP motion
     // command stream and lifecycle close operation.
     virtual bool BeckhoffEmergencyStop(bool active) const = 0;
 };
-
-ROBOT_API_MEMBER const std::wstring GetIOInputConfig(int index);
-ROBOT_API_MEMBER const std::wstring GetIOOutputConfig(int index);
 
 #pragma region api
 ROBOT_API_MEMBER RobotDevice &GetRobot();

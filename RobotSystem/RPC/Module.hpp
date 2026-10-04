@@ -1,726 +1,294 @@
-﻿#pragma once
-#if defined(_WINDOWS) || defined(WINDOWS) || defined(_WIN32) || defined(WIN32)
-#ifdef min
-#pragma push_macro("min")
-#undef min
-#define _NO_MIN
-#endif
-
-#ifdef max
-#pragma push_macro("max")
-#undef max
-#define _NO_MAX
-#endif
-#endif
-
-#include <vector>
-#include <cmath>
-#include <cstring>
-#include <memory>
-#include <future>
-#include <type_traits>
+#pragma once
+#include <chrono>
+#include <cstdint>
 #include <functional>
+#include <map>
+#include <mutex>
+#include <stdexcept>
+#include <string>
 #include <boost/asio.hpp>
 #include <boost/thread.hpp>
-#include <boost/atomic.hpp>
-#include <boost/signals2/signal.hpp>
-#include <fmt/format.h>
-#include <fmt/color.h>
-
 #include "fsm.hpp"
 #include "task.hpp"
-#include "utils.h"
-
-#if defined(USING_LOG) && USING_LOG
-#ifdef USING_LOGURU
-#include <loguru/loguru.hpp>
-#define MODULE_INFO(cond, x) VLOG_IF_S(loguru::Verbosity_INFO, cond) << x;
-#define MODULE_ERROR(cond, x) VLOG_IF_S(loguru::Verbosity_ERROR, cond) << x;
-#define MODULE_THREADNAME(name) loguru::set_thread_name(name);
-#else
-#include <iostream>
-#define MODULE_INFO(cond, x) ((cond) ? (std::cout << x << std::endl) : (std::cout));
-#define MODULE_ERROR(cond, x) ((cond) ? (std::cout << x << std::endl) : (std::cout));
-#define MODULE_THREADNAME(name) (void)0;
-#endif
-#else
-#define MODULE_INFO(cond, x) (void)0;
-#define MODULE_ERROR(cond, x) (void)0;
-#define MODULE_THREADNAME(name) (void)0;
-#endif
 
 namespace module {
 
-enum class module_state {
-    S_Running = 0,
-    S_Error = 1,
-    S_Suspending = 2,
+enum class module_state { S_Running = 0, S_Error = 1, S_Suspending = 2 };
+
+struct FailureInfo {
+    bool active = false;
+    std::int64_t time_unix_ns = 0;
+    std::string task_name;
+    std::string failed_step;
+    std::string reason;
+    std::map<std::string, int> report;
 };
 
-    /**
-         * @brief 功能：把任务报告和异常信息格式化为可读的状态字符串。
-         * @details 机制：按任务步骤输出返回码，若任务带异常则重新抛出以提取错误文本。
-         */
-    static std::string do_report(const task::tasks_ptr<> &task, const task::report_t &rep)
+inline std::string do_report(const task::tasks_ptr<> &work, const task::report_t &report)
 {
-    std::string info;
-    for (auto &r : rep) {
-        info += fmt::format("{}, {}\n", r.first, r.second);
-    }
-    if (task) {
-        auto err = task->get_error();
-        if (err) {
-            try {
-                std::rethrow_exception(err);
-            } catch (std::exception e) {
-                info = info + e.what() + "\n";
-            }
+    if (work && work->get_error()) {
+        try {
+            std::rethrow_exception(work->get_error());
+        } catch (const std::exception &e) {
+            return e.what();
+        } catch (...) {
+            return "Task raised a non-standard exception.";
         }
     }
-    return info;
+    for (const auto &step : report) {
+        if (step.second == task::failed || step.second == task::errored)
+            return step.first + ": task returned failure.";
+    }
+    return "Task failed.";
 }
 
-class task_error : public std::exception {
+class task_error : public std::runtime_error {
 public:
-    task_error(const task::tasks_ptr<> &task, const task::report_t &report)
-        : m_task(task)
-        , m_report(report)
-        , std::exception(("Task runs failed: \n" + do_report(task, report)).c_str())
-    {
-    }
-
+    task_error(const task::tasks_ptr<> &work, const task::report_t &report)
+        : std::runtime_error(do_report(work, report)), m_task(work), m_report(report) {}
     const task::tasks_ptr<> m_task;
     const task::report_t m_report;
 };
 
-using task_t = boost::packaged_task<void>;
-
-/// <summary>
-/// 基于有限状态机(FSM)的抽象模块类
-/// </summary>
-/// <typeparam name="ErrorCode">错误代码类型</typeparam>
-/// <typeparam name="State">状态类型</typeparam>
-template <typename State, typename ErrorCode, bool Threading>
+// 所有任务及状态转移共用一个执行线程；运行状态、请求批次和设备写入共用同一把锁。
+template <typename State>
 class Module : public fsmlib::fsm<State> {
 public:
     using state_t = State;
-
     template <typename... Items> using fsm_table = fsmlib::detail::_transition_table<Items...>;
 
-public:
-    /**
-     * @brief 判断模块是否仍有异步状态转移未完成。
-     * @details 先检查转移标志，再以非阻塞方式检查 future；已完成的 future 会在这里收尾，避免状态残留。
-     */
+    bool IsRunning() const { return GetModuleState() == module_state::S_Running; }
+    module_state GetModuleState() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        return m_state_status;
+    }
     bool IsTransition() const
     {
-        try {
-            if (is_transition) {
-                return true;
-            }
-            std::lock_guard<decltype(m_future_mutex)> lock(m_future_mutex);
-            if (m_future.valid()) {
-                if (m_future.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
-                    return true;
-                }
-                m_future.get();
-            }
-        } catch (...) {
-        }
-        return false;
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        return m_transition;
     }
-
-    ///< 模块是否处于`运行`状态(没有错误和挂起)
-    bool IsRunning() const { return _inner_state == module_state::S_Running; }
-
-    ///< 检查状态之间是否存在通路
+    bool IsTaskBusy() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        return m_executing || m_pending != 0;
+    }
+    virtual bool IsBusy() const { return IsTaskBusy(); }
     template <typename Object> bool IsConnected(State to)
     {
-        if (to == get_current_state()) {
-            return true;
-        }
-        return fsmlib::fsm<State>::test_connection<Object>(to);
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        return to == this->get_current_state() || this->template test_connection<Object>(to);
     }
-
-    ///< 模块是否处于`忙碌`状态(正在运行有效任务)
-    virtual bool IsBusy() const { return IsTaskBusy(); }
-
-    module_state GetModuleState() const { return _inner_state; }
-
-    virtual std::string GetStateName(const State &state) const { return ""; }
-
-    const std::string GetName() const { return m_name.size() > 0 ? m_name : typeid(*this).name(); }
-
-    /**
-     * @brief 读取模块最近一次异常的可显示文本。
-     * @details 在错误锁内取出异常指针并重新抛出，统一转换为 what() 文本；没有异常时返回空字符串。
-     */
-    const std::string GetLastError()
+    virtual std::string GetStateName(const State &) const { return ""; }
+    std::string GetName() const { return m_name; }
+    FailureInfo GetFailure() const
     {
-        try {
-            boost::shared_lock_guard<decltype(m_error_lock)> lock(m_error_lock);
-            if (m_error && m_error->except_ptr) {
-                boost::rethrow_exception(m_error->except_ptr);
-            }
-            return "";
-        } catch (const std::exception &e) {
-            return e.what();
-        }
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        return m_failure;
     }
-
-    const boost::exception_ptr &GetError() const
+    std::string GetLastError() const { return GetFailure().reason; }
+    std::string GetStateString(std::string extra = "") const
     {
-        boost::shared_lock_guard<decltype(m_error_lock)> lock(m_error_lock);
-        return m_error ? m_error->except_ptr : nullptr;
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        return m_name + " / " + GetStateName(this->get_current_state()) + " / " +
+               m_failure.reason + " " + extra;
     }
 
-    /**
-         * @brief 功能：生成包含模块名、状态和未解决错误的诊断文本。
-         * @details 机制：读取状态机当前状态和错误锁保护的数据，再把调用方附加信息拼接到统一格式。
-         */
-    const std::string GetStateString(std::string extra = "")
-    {
-        std::string state_str = GetStateName(this->m_state);
-        bool errored;
-        {
-            boost::shared_lock_guard<decltype(m_error_lock)> lock(m_error_lock);
-            errored = m_error && m_error->except_ptr != nullptr;
-        }
-        if (errored) {
-            std::string error_str = GetLastError();
-            error_str = "\n    There is an unsolved error: " + error_str;
-            extra += error_str;
-        }
-        char x;
-        switch (_inner_state) {
-        case module_state::S_Suspending:
-            x = 'S';
-            break;
-        case module_state::S_Error:
-            x = 'E';
-            break;
-        case module_state::S_Running:
-            x = 'R';
-            break;
-        }
-        return fmt::format("[{}|{}]<{}> {}", x, GetName(), state_str, extra);
-    }
-
-public:
-    /// <summary>
-    /// 通知流程控制器：暂停当前采样流程
-    /// </summary>
-    /// <returns></returns>
+    /// 暂停使当前批次失效；恢复之后只接受新的请求。
     template <typename Object> bool Pause()
     {
-        return this->PostAsyncEvent<Object>(transition_pause{});
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        InvalidateRequests();
+        if (m_state_status != module_state::S_Error)
+            m_state_status = module_state::S_Suspending;
+        return true;
     }
-
-    /// <summary>
-    /// 通知流程控制器：继续当前采样流程
-    /// </summary>
-    /// <returns></returns>
     template <typename Object> bool Resume()
     {
-        return this->PostAsyncEvent<Object>(transition_resume{});
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        if (m_stopping || m_state_status == module_state::S_Error || m_executing)
+            return false;
+        m_state_status = module_state::S_Running;
+        return true;
     }
-
-    /// <summary>
-    /// 通知流程控制器：继续当前采样流程
-    /// </summary>
-    /// <returns></returns>
+    /// 人工清除仅更新软件记录；旧请求永久失效，不调用设备或重放任务。
     template <typename Object> bool Rescue(bool resume)
     {
-        return this->PostAsyncEvent<Object>(transition_rescue{resume});
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        if (m_stopping || m_executing) return false;
+        InvalidateRequests();
+        m_failure = {};
+        m_state_status = resume ? module_state::S_Running : module_state::S_Suspending;
+        return true;
     }
 
 protected:
-    struct transition_rescue {
-        transition_rescue(bool resume)
-            : resume(resume)
+    Module(std::string name, State init_state)
+        : fsmlib::fsm<State>(init_state), m_name(std::move(name))
+    {
+        m_def_task = boost::make_shared<boost::asio::io_service::work>(m_task_server);
+        m_task_worker = boost::make_shared<boost::thread>(&Module::TaskThread, this);
+    }
+    ~Module() { Shutdown(); }
+
+    // 派生类析构时先停止线程，确保回调不会访问已经销毁的派生成员。
+    void Shutdown()
+    {
         {
+            std::lock_guard<std::recursive_mutex> lock(m_gate);
+            m_stopping = true;
+            InvalidateRequests();
+            m_def_task.reset();
+            m_task_server.stop();
         }
+        if (m_task_worker && m_task_worker->joinable()) m_task_worker->join();
+    }
 
-        ///< If resume module to running state after rescued.
-        const bool resume = false;
-    };
+    /// 提交和开始执行分别检查状态及批次；错误、暂停、停止、清除均废弃旧批次。
+    bool PostTask(const std::function<void()> &work)
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        return Enqueue(work, false);
+    }
 
-    struct transition_pause {};
-
-    struct transition_resume {};
-
-    struct transition_error {
-
-        transition_error(double t,
-                         boost::exception_ptr &e,
-                         boost::shared_ptr<ErrorCode> c = nullptr)
-            : time(t)
-            , except_ptr(e)
-            , code_ptr(c)
-        {
-        }
-
-        ///< Error arrising time.
-        const double time;
-        ///< Error infomation when last error arised.
-        const boost::exception_ptr except_ptr;
-        ///< Error code when last error arised. (used to check error).
-        const boost::shared_ptr<ErrorCode> code_ptr;
-    };
-
-protected:
-    virtual ErrorCode GetErrorCode(const boost::exception_ptr &_exception) const = 0;
-
-    virtual bool OnError(const transition_error &) { return false; }
-    virtual void OnPause(const transition_pause &) {}
-    virtual bool OnRescue(const transition_rescue &) { return false; }
-    virtual void OnResume(const transition_resume &) {}
-
-    /// <summary>
-    /// This function is called periodically, do anything periodically that you need here.
-    /// </summary>
-    /// <param name="state">当前状态</param>
-    virtual void Runner(const State &state) {}
-
-    /// <summary>
-    /// 发起异步转移
-    /// </summary>
-    /// <typeparam name="Derived"></typeparam>
-    /// <typeparam name="Event"></typeparam>
-    /// <param name="event"></param>
-    /// <returns></returns>
-    /**
-     * @brief 异步提交一个模块状态事件。
-     * @details 拒绝忙碌任务和未完成转移，等待极短窗口回收旧 future 后创建新的异步 PostEvent 任务。
-     */
     template <typename Derived, typename Event> bool PostAsyncEvent(const Event &event)
     {
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        if (IsTaskBusy() || m_transition) return false;
+        return Enqueue([this, event]() { ApplyTaskEvent<Derived>(event); }, true);
+    }
+
+    // 任务完成后的状态提交在当前执行线程中完成，仍检查请求批次。
+    template <typename Derived, typename Event> bool ApplyTaskEvent(const Event &event)
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        RequireCurrentTask();
+        this->m_state = fsmlib::fsm<State>::template post_event<Derived, Event>(event);
+        return true;
+    }
+
+    void RequireCurrentTask() const
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        if (m_stopping || m_state_status != module_state::S_Running || !m_executing ||
+            m_executing_generation != m_generation)
+            throw task::cancelled();
+    }
+
+    /// 状态检查与单次运动写入在锁内连续执行，阻止失效任务继续发送命令。
+    template <typename Action> bool ExecuteMotion(Action action)
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        RequireCurrentTask();
+        return action();
+    }
+
+    /// 显式停止可以在错误状态执行；保留失败诊断，并使当前批次失效。
+    template <typename Action> bool ExecuteStop(Action action)
+    {
+        std::lock_guard<std::recursive_mutex> lock(m_gate);
+        if (m_stopping) return false;
+        InvalidateRequests();
         try {
-            static const std::string name = GetName() + "/T";
-
-            if (IsTaskBusy()) {
-                return false;
-            }
-            ////std::unique_lock<decltype(m_notify_mutex)> lock(m_notify_mutex);
-            if (IsTransition()) {
-                if (m_future.wait_for(std::chrono::milliseconds(5)) ==
-                    std::future_status::timeout) {
-                    return false;
-                }
-                m_future.get();
-            }
-
-            //// Wait until transition is running.
-            // while (IsTransition())
-            //    boost::this_thread::sleep_for(boost::chrono::milliseconds(10));
-
-            // std::lock_guard<decltype(m_future_mutex)> lock(m_future_mutex);
-            // if (m_future.valid()) {
-            //    if (m_future.wait_for(std::chrono::milliseconds(5)) ==
-            //    std::future_status::timeout) {
-            //        return false;
-            //    }
-            //    m_future.get();
-            //}
-
-            // boost::mutex::scoped_lock lock(m_notify_mutex);
-            m_future = std::async(std::launch::async, [this, event]() {
-                           MODULE_THREADNAME(name.c_str())
-                           return PostEvent<Derived>(event);
-                       }).share();
-            //// XXX: some wait for transition is running.
-            // std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            if (!action()) throw std::runtime_error("Stop operation failed.");
             return true;
+        } catch (const std::exception &e) {
+            RecordFailure(e, "stop");
         } catch (...) {
+            RecordFailure(std::runtime_error("Stop raised a non-standard exception."), "stop");
         }
         return false;
     }
 
-    void ClearFaults()
+    std::function<void()> MakeTask(const task::tasks_ptr<> &work)
     {
-        boost::lock_guard<decltype(m_error_lock)> lock(m_error_lock);
-        m_error.reset();
-    }
-
-private:
-    /**
-     * @brief 将异常事件转换为模块错误状态。
-     * @details 只有模块尚未处于错误态时才调用 OnError；若未被子类接管，则把内部状态切换为 S_Error。
-     */
-    State post_event(const transition_error &event)
-    {
-        fsmlib::fsm<State>::processing_lock lock(*this);
-        if (_inner_state != module_state::S_Error) {
-            if (!OnError(event)) {
-                _inner_state = module_state::S_Error;
-            }
-        }
-        return get_current_state();
-    }
-
-    /**
-     * @brief 处理模块故障救援事件并按请求决定暂停或恢复运行。
-     * @details 子类救援成功后清除错误，先进入挂起态；resume 为真时再执行 OnResume 并切回运行态。
-     */
-    template <typename Object> State post_event(const transition_rescue &event)
-    {
-        fsmlib::fsm<State>::processing_lock lock(*this);
-        if (_inner_state == module_state::S_Error) {
-            if (!OnRescue(event)) {
-                return get_current_state();
-            }
-            ClearFaults();
-            _inner_state = module_state::S_Suspending;
-            if (event.resume) {
-                OnResume(transition_resume{});
-                _inner_state = module_state::S_Running;
-                MODULE_INFO(_verbose > 0, (*this).GetStateString("Module rescued and resumed."))
-            } else {
-                MODULE_INFO(_verbose > 0, (*this).GetStateString("Module rescued and suspended."))
-            }
-        }
-        return get_current_state();
-    }
-
-    /**
-     * @brief 处理暂停事件并把运行中的模块切换到挂起态。
-     * @details 仅在内部状态为 S_Running 时调用 OnPause，避免重复暂停触发副作用。
-     */
-    template <typename Object> State post_event(const transition_pause &event)
-    {
-        fsmlib::fsm<State>::processing_lock lock(*this);
-        if (_inner_state == module_state::S_Running) {
-            OnPause(event);
-            _inner_state = module_state::S_Suspending;
-            MODULE_INFO(_verbose > 0, (*this).GetStateString("Module suspended."))
-        }
-        return get_current_state();
-    }
-
-    /**
-     * @brief 处理恢复事件并把挂起模块切回运行态。
-     * @details 只有当前内部状态为 S_Suspending 时才调用 OnResume 并更新状态。
-     */
-    template <typename Object> State post_event(const transition_resume &event)
-    {
-        fsmlib::fsm<State>::processing_lock lock(*this);
-        if (_inner_state == module_state::S_Suspending) {
-            OnResume(event);
-            _inner_state = module_state::S_Running;
-            MODULE_INFO(_verbose > 0, (*this).GetStateString("Module resumed."))
-        }
-        return get_current_state();
-    }
-
-    template <typename Object, typename Event> State post_event(const Event &event)
-    {
-        return fsmlib::fsm<State>::post_event<Object, Event>(event);
-    }
-
-private:
-    /**
-     * @brief 在状态机线程中执行一次完整状态转移。
-     * @details 按前置回调、状态机事件、状态提交、后置回调的顺序推进；异常进入统一错误状态并清除转移标志。
-     */
-    template <typename Derived, typename Event> State PostEvent(const Event &event)
-    {
-        //{
-        //    std::unique_lock<decltype(m_notify_mutex)> lock(m_notify_mutex);
-        //    // Notify async posting to continue.
-        assert(!is_transition);
-        is_transition = true;
-        //    //m_notify.notify_all();
-        //}
-        try {
-            auto old_state = this->get_current_state();
-            MODULE_INFO(
-                _verbose > 1,
-                GetStateString(fmt::format("Transition started with [{}]", typeid(event).name())))
-            bool not_running = _inner_state != module_state::S_Running;
-            // Pre transition event
-            OnPreTransition(old_state);
-            // NOTE: post_event not assign new_state to `m_state`, so do it manually.
-            auto new_state = this->post_event<Derived>(event);
-            if (_inner_state != module_state::S_Running) {
-                MODULE_ERROR(_verbose > 1,
-                             GetStateString("Cannot transition for module is not running."))
-            } else {
-                // Assign new state.
-                this->m_state = new_state;
-                MODULE_INFO(_verbose > 1,
-                            GetStateString(fmt::format("Transition finished from [{}] with [{}].",
-                                                       GetStateName(old_state),
-                                                       typeid(event).name())))
-                // Post transition event: before assign new state to avoid runner confliction.
-                if (old_state != new_state || not_running) {
-                    OnPostTransition(old_state, new_state);
-                }
-            }
-            //{
-            //    // !!! This must be here.
-            //    std::unique_lock<decltype(m_notify_mutex)> lock(m_notify_mutex);
-            is_transition = false;
-            //}
-        } catch (std::exception e) {
-            //{
-            //    std::unique_lock<decltype(m_notify_mutex)> lock(m_notify_mutex);
-            is_transition = false;
-            //}
-            _Do_Error(e);
-        }
-        return get_current_state();
-    }
-
-protected:
-    /// <summary>
-    /// Create runnable task by state.
-    /// </summary>
-    /// <param name=""></param>
-    /// <returns></returns>
-    virtual std::function<void()> MakeTask(const state_t &) { return nullptr; }
-
-    /// <summary>
-    /// Create runnable task for interruption by state.
-    /// </summary>
-    /// <param name=""></param>
-    /// <returns></returns>
-    virtual std::function<void()> OnInterrupt(const state_t &) { return nullptr; }
-
-    /// <summary>
-    /// Create runnable task.
-    /// </summary>
-    /// <param name="task"></param>
-    /// <returns></returns>
-    /**
-     * @brief 将任务序列包装成模块任务线程可执行的闭包。
-     * @details 执行任务、记录报告、保存当前任务并清理重试状态；任务失败通过 task_error 交给模块错误处理。
-     */
-    std::function<void()> MakeTask(const task::tasks_ptr<> &task)
-    {
-        if (!task)
-            return nullptr;
-        return [this, task]() {
-            MODULE_INFO(_verbose > 1,
-                        "Run task: " << task->get_name() << " : " << task->get_count());
-            if (!task->run(this->task_report)) {
-                throw task_error(std::move(task), std::move(this->task_report));
-            }
-            MODULE_INFO(_verbose > 1, module::do_report(this->m_current_task, this->task_report));
-            {
-                std::lock_guard<decltype(m_task_mutex)> lock(m_task_mutex);
-                m_current_task = task;
-            }
-
-            m_retry = 0;
-            this->task_report.clear();
+        if (!work) return nullptr;
+        return [this, work]() {
+            task::report_t report;
+            work->report(report);
+            work->set_execution_guard([this]() { RequireCurrentTask(); });
+            if (!work->run(report)) throw task_error(work, report);
         };
     }
 
-    const task::tasks_ptr<> GetCurrentTask() const
-    {
-        std::lock_guard<decltype(m_task_mutex)> lock(m_task_mutex);
-        return m_current_task;
-    }
-
-    const bool IsTaskBusy() const
-    {
-        std::lock_guard<decltype(m_task_mutex)> lock(m_task_mutex);
-        return m_current_task && m_current_task->is_busy();
-    }
-
-    /// <summary>
-    /// Clear action report, then will re-run the task next time.
-    /// </summary>
-    void ClearReport() { this->task_report.clear(); }
-
-    /// <summary>
-    /// Post task to server running list.
-    /// </summary>
-    /// <param name="task"></param>
-    /// <returns></returns>
-    bool PostTask(const std::function<void()> &task)
-    {
-        if (task) {
-            m_task_server.post(task);
-            return true;
-        }
-        return false;
-    }
-
-protected:
-    /**
-     * @brief 初始化模块状态机、任务服务和后台任务线程。
-     * @details 保存状态/周期配置，创建 Asio work 保持任务服务存活，并启动 TaskThread 处理异步任务。
-     */
-    Module(std::string name, State init_state, double period, double guard_period, int verbose = 0)
-        : fsmlib::fsm<State>(init_state)
-        , m_name(name)
-        , _init_state(init_state)
-        , _period(period)
-        , _guard_period(guard_period > 0 ? guard_period : 1.0)
-        , _verbose(verbose)
-    {
-        // assert(period > 0, "Module period should be positive.");
-        if (Threading) {
-            MODULE_INFO(true, (*this).GetStateString("Module (threading) constucted."))
-        } else {
-            MODULE_INFO(true, (*this).GetStateString("Module constucted."))
-        }
-
-        // 创建后台任务
-        m_def_task = boost::make_shared<boost::asio::io_service::work>(m_task_server);
-
-        // Create background runner.
-        m_task_worker = boost::make_shared<boost::thread>(&Module::TaskThread, this);
-
-        m_task_server.post([]() {});
-    }
-
-    ~Module()
-    {
-        m_def_task.reset();
-        m_task_server.reset();
-        m_task_worker->interrupt();
-        m_task_worker->join();
-        MODULE_INFO(true, (*this).GetStateString("Module destoryed."))
-    }
-
 private:
-    /**
-         * @brief 功能：运行模块任务队列对应的 Asio 工作线程。
-         * @details 机制：在线程中执行异步 task_service，直到中断或服务停止，任务异常由外围状态机处理。
-         */
-    void TaskThread()
+    bool Enqueue(const std::function<void()> &work, bool transition)
     {
-#ifdef USING_LOGURU
-        loguru::set_thread_name((m_name + "-TaskWorker").c_str());
-#endif
-        while (!boost::this_thread::interruption_requested()) {
-            try {
-                m_task_server.run();
-            } catch (std::exception &e) {
-                _Do_Error(e);
-            }
-        }
-    }
-
-protected:
-    /**
-         * @brief 功能：按模块周期执行后台 Worker 回调并处理调度间隔。
-         * @details 机制：记录起点、调用 Worker、扣除执行耗时后休眠，异常进入模块错误处理并在下一周期继续。
-         */
-    void WorkerThread()
-    {
-#ifdef USING_LOGURU
-        loguru::set_thread_name((m_name + "-Worker").c_str());
-#endif
-        while (!boost::this_thread::interruption_requested()) {
-            double t0 = ilsr::Time::wall_time();
-            try {
-                if (IsRunning() && !IsTransition()) {
-                    Runner(get_current_state());
-                }
-            } catch (const std::exception &e) {
-                _Do_Error(e);
-            }
-            _Do_Dispatch(t0);
-        }
-    }
-
-    /**
-     * @brief 按模块周期扣除本轮执行耗时并等待下一轮。
-     * @details 正周期只等待剩余时间，非正周期短暂休眠让出 CPU，最后设置线程中断检查点。
-     */
-    void _Do_Dispatch(const double t0)
-    {
-        // Thread dispatch: decide how long to sleep before next cycle.
-        if (_period > 0) {
-            double te = ilsr::Time::wall_time();
-            double sleep = std::clamp<double>(_period - (te - t0), 0, _period); // second
-            std::this_thread::sleep_for(std::chrono::microseconds(int(sleep * 1000000)));
-        } else {
-            std::this_thread::sleep_for(std::chrono::microseconds(10));
-        }
-        boost::this_thread::interruption_point();
-    }
-
-    /**
-     * @brief 保存模块异常并驱动错误状态转移。
-     * @details 生成带时间、异常和错误码的 transition_error，记录日志后调用错误事件；错误处理自身再次失败时避免递归升级。
-     */
-    void _Do_Error(const std::exception &e, const std::string &extra = "", bool ignore = false)
-    {
-
-        if (!ignore && _inner_state != module_state::S_Error) {
-            auto _ptr = boost::current_exception();
-            auto error = std::make_shared<transition_error>(
-                /* time = */ ilsr::Time::wall_time(),
-                /* except_ptr =*/_ptr,
-                /* code_ptr = */ boost::make_shared<ErrorCode>(GetErrorCode(_ptr)));
+        if (!work || m_stopping || m_state_status != module_state::S_Running) return false;
+        const auto generation = m_generation;
+        m_task_server.post([this, work, generation, transition]() {
             {
-                boost::shared_lock_guard<decltype(m_error_lock)> lock(m_error_lock);
-                // Store current error and state.
-                m_error.swap(error);
+                std::lock_guard<std::recursive_mutex> lock(m_gate);
+                if (m_stopping || generation != m_generation ||
+                    m_state_status != module_state::S_Running) return;
+                --m_pending;
+                m_executing = true;
+                m_executing_generation = generation;
             }
-            // Call error dealing.
-            MODULE_ERROR(true, GetStateString(extra))
             try {
-                this->post_event(*m_error);
+                RequireCurrentTask();
+                work();
+            } catch (const task::cancelled &) {
+                // 暂停或停止造成的取消只终止本任务。
             } catch (const std::exception &e) {
-                // Error in this stage will be ignored.
-                _Do_Error(e, "", true);
+                std::lock_guard<std::recursive_mutex> lock(m_gate);
+                RecordFailure(e, transition ? "transition" : "task");
+            } catch (...) {
+                std::lock_guard<std::recursive_mutex> lock(m_gate);
+                RecordFailure(std::runtime_error("Task raised a non-standard exception."), "task");
             }
-        } else {
-            MODULE_ERROR(true,
-                         GetStateString("Module error arrised in the transition to error state."))
+            std::lock_guard<std::recursive_mutex> lock(m_gate);
+            m_executing = false;
+            if (generation == m_generation && transition) m_transition = false;
+        });
+        ++m_pending;
+        if (transition) m_transition = true;
+        return true;
+    }
+
+    void InvalidateRequests()
+    {
+        ++m_generation;
+        m_pending = 0;
+        m_transition = false;
+    }
+
+    // 错误处理仅保存首个未清除错误并终止本批次，禁止提交任务或调用设备。
+    void RecordFailure(const std::exception &e, const std::string &operation)
+    {
+        InvalidateRequests();
+        m_state_status = module_state::S_Error;
+        if (m_failure.active) return;
+        m_failure.active = true;
+        m_failure.time_unix_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        m_failure.task_name = operation;
+        m_failure.failed_step = operation;
+        m_failure.reason = e.what();
+        if (const auto *failure = dynamic_cast<const task_error *>(&e)) {
+            m_failure.task_name = failure->m_task->get_name();
+            for (const auto &step : failure->m_report) {
+                m_failure.report.emplace(step.first, step.second);
+                if (step.second == task::failed || step.second == task::errored)
+                    m_failure.failed_step = step.first;
+            }
         }
     }
 
-protected:
-    boost::shared_ptr<boost::thread> m_worker = nullptr;
-    ///< OnPreTransition( old state / now state )
-    boost::signals2::signal<void(state_t)> OnPreTransition;
-    ///< OnPostTransition( old state, new state)
-    boost::signals2::signal<void(state_t, state_t)> OnPostTransition;
+    void TaskThread() { m_task_server.run(); }
 
-    const int _verbose = 0;
-
-protected:
-    std::atomic<size_t> m_retry = {0};
-
-private:
-    task::report_t task_report;
-    boost::asio::io_service m_task_server;
-    boost::shared_ptr<boost::thread> m_task_worker = nullptr;
-    boost::shared_ptr<boost::asio::io_service::work> m_def_task;
-
-    mutable std::mutex m_task_mutex;
-    task::tasks_ptr<> m_current_task;
-
-private:
-    const State _init_state;
     const std::string m_name;
-    const double _period;
-    const double _guard_period;
-    std::atomic<module_state> _inner_state = module_state::S_Suspending;
-
-    boost::shared_mutex m_error_lock;
-    std::shared_ptr<transition_error> m_error = nullptr;
-
-private:
-    std::atomic_bool is_transition = false;
-    mutable std::mutex m_future_mutex;
-    std::shared_future<State> m_future;
+    mutable std::recursive_mutex m_gate;
+    module_state m_state_status = module_state::S_Suspending;
+    FailureInfo m_failure;
+    std::uint64_t m_generation = 0;
+    std::uint64_t m_executing_generation = 0;
+    std::size_t m_pending = 0;
+    bool m_executing = false;
+    bool m_transition = false;
+    bool m_stopping = false;
+    boost::asio::io_service m_task_server;
+    boost::shared_ptr<boost::thread> m_task_worker;
+    boost::shared_ptr<boost::asio::io_service::work> m_def_task;
 };
-
 } // namespace module
-
-#ifdef _NO_MIN
-#pragma pop_macro("min")
-#undef _NO_MIN
-#endif
-
-#ifdef _NO_MAX
-#pragma pop_macro("max")
-#undef _NO_MAX
-#endif

@@ -41,6 +41,8 @@ enum task_status : int {
 
 using report_t = tbb::concurrent_map<std::string, int>;
 
+class cancelled : public std::exception {};
+
 template <typename... Args>
 class _TaskBase : public std::enable_shared_from_this<_TaskBase<Args...>> {
 public:
@@ -71,12 +73,15 @@ public:
 
     virtual bool is_busy() const { return m_running; }
 
+    virtual void set_execution_guard(std::function<void()> guard) { m_execution_guard = std::move(guard); }
+
     /**
      * @brief 功能：执行单个任务回调并更新任务报告。
      * @details 机制：处理可跳过状态，标记 running，捕获回调异常并转换为 passed/failed/errored，最后清除运行标志。
      */
     virtual bool run(report_t &ret, Args... args)
     {
+        if (m_execution_guard) m_execution_guard();
         // 阶段一：标记运行并处理可跳过的已完成任务。
         m_running = true;
         // Skip finished task.
@@ -84,6 +89,7 @@ public:
             if (ret.find(m_name) != ret.end() &&
                 (ret.at(m_name) == passed || ret.at(m_name) == skipped)) {
                 ret.at(m_name) = skipped;
+                m_running = false;
                 return true;
             }
         }
@@ -97,6 +103,9 @@ public:
             m_counter++;
             res = m_task ? m_task(args...) : false;
             ret.at(m_name) = res ? passed : failed;
+        } catch (const cancelled &) {
+            m_running = false;
+            throw;
         } catch (...) {
             ret.at(m_name) = errored;
             m_error = std::current_exception();
@@ -131,6 +140,7 @@ public:
     }
 
 protected:
+    std::function<void()> m_execution_guard;
     std::atomic<size_t> m_counter = {0};
     std::atomic_bool m_running = {false};
     std::string m_name;
@@ -194,6 +204,12 @@ public:
         for (auto &task : m_tasks) {
             task->report(ret);
         }
+    }
+
+    void set_execution_guard(std::function<void()> guard) override
+    {
+        base_type::set_execution_guard(guard);
+        for (auto &task : m_tasks) task->set_execution_guard(guard);
     }
 
     virtual bool is_busy() const

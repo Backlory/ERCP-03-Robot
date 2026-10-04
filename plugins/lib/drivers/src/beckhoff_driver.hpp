@@ -62,44 +62,18 @@ public:
 
     beckhoff_arm_move_state MoveState();
 
-    double Follow_Length();
-    double BigWhell();
-    double SmallWhell();
-    double BigWhellCalc();
-    double SmallWhellCalc();
-    bool Output_Switch(gpio_output_t out_switch);
     double Force(int iPos);
 
-    // 获取阻力信息
-    double DeliverForce();
-    // 旋转角度
-    double RotateDegree();
-    // 抬钳器
-    double Lifter();
-
-    // 获取电池信息
-    int BatteryInfo();
-
     // 写入信息
-    bool LinearActuator(INT16 data[2]);
     bool MoveArmTo(bool bIsOpen);
-    bool FollowOperationData(unsigned long length, void *data);
     std::uint32_t FollowOperationDataResult(unsigned long length, const void *data);
     std::uint32_t GoldDiscreteCommandResult(const device::beckhoff::GoldDiscreteCommand &command);
-    bool BaseMoveData(unsigned long length, void *data);
     bool ArmOperation(beckhoff_arm_operation iOpration);
-
-    bool SetEndoscopyType(int iType);
 
     bool EmergencyStop(bool bIsStop);
 
-    bool ERCPOperateState(bool state); // true = 操作中、False = 未操作
-
     bool IsERCPOnline();
     bool IsERCPReady();
-    double GetERCPDeliverForce();
-    double GetERCPGuidwireForce();
-    double GetERCPDeliverPos();
 
 private:
     // 读取写入数据

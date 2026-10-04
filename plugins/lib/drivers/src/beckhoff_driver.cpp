@@ -251,12 +251,6 @@ bool Beckhoff_Motor::CloseConn()
     return nErr == ADSERR_NOERR;
 }
 
-// 设置水气
-bool Beckhoff_Motor::LinearActuator(INT16 data[2])
-{
-    return WriteData("MAIN.ILA_Node3", 4, data) == ADSERR_NOERR;
-}
-
 // 写入
 bool Beckhoff_Motor::MoveArmTo(bool bIsOpen)
 {
@@ -265,12 +259,6 @@ bool Beckhoff_Motor::MoveArmTo(bool bIsOpen)
         iMoveState = BAO_OPEN;
 
     return ArmOperation(iMoveState);
-}
-
-// 跟随数据发�?
-bool Beckhoff_Motor::FollowOperationData(unsigned long length, void *data)
-{
-    return FollowOperationDataResult(length, data) == ADSERR_NOERR;
 }
 
 /**
@@ -396,20 +384,9 @@ Beckhoff_Motor::GoldDiscreteCommandResult(const device::beckhoff::GoldDiscreteCo
     return result;
 }
 
-// ��������
-bool Beckhoff_Motor::BaseMoveData(unsigned long length, void *data)
-{
-    return WriteData("MAIN.Base_Control_Cmd", length, data) == ADSERR_NOERR;
-}
-
 bool Beckhoff_Motor::ArmOperation(beckhoff_arm_operation iOpration)
 {
     return WriteData("MAIN.Status_Command_FromMaster", 4, &iOpration) == ADSERR_NOERR;
-}
-
-bool Beckhoff_Motor::SetEndoscopyType(int iType)
-{
-    return WriteData("MAIN.type_of_scope", 4, &iType) == ADSERR_NOERR;
 }
 
 /**
@@ -439,73 +416,11 @@ beckhoff_arm_move_state Beckhoff_Motor::MoveState()
     return static_cast<beckhoff_arm_move_state>(Snapshot().move_state);
 }
 
-double Beckhoff_Motor::Follow_Length()
-{
-    return Snapshot().common_values[0];
-}
-
-double Beckhoff_Motor::SmallWhell()
-{
-    return Snapshot().common_values[17 + 16];
-}
-double Beckhoff_Motor::BigWhell()
-{
-    return Snapshot().common_values[17 + 17];
-}
-
-double Beckhoff_Motor::SmallWhellCalc()
-{
-    return Snapshot().common_values[2];
-}
-double Beckhoff_Motor::BigWhellCalc()
-{
-    return Snapshot().common_values[1];
-}
-
-/**
- * @brief 查询指定 GPIO 输出在最新 Beckhoff 快照中的开关状态。
- * @details 将 gas、water、suct 三种逻辑输出映射到快照中的固定 bit；未知输出统一返回关闭。
- */
-bool Beckhoff_Motor::Output_Switch(gpio_output_t out_switch)
-{
-    // 从一致快照读取输出位，并把 gas/water/suction 映射为对应的 PLC bit。
-    const auto switches = Snapshot().output_switches;
-    if (gpio_output_t::gas == out_switch)
-        return (switches & (1u << 1)) != 0;
-    else if (gpio_output_t::water == out_switch)
-        return (switches & (1u << 0)) != 0;
-    else if (gpio_output_t::suct == out_switch)
-        return (switches & (1u << 2)) != 0;
-
-    return false;
-}
-
 double Beckhoff_Motor::Force(int iPos)
 {
     if (iPos < 0 || iPos > 9)
         return 0;
     return Snapshot().common_values[3 + iPos];
-}
-
-int Beckhoff_Motor::BatteryInfo()
-{
-    return Snapshot().power_level;
-}
-
-// 获取阻力信息
-double Beckhoff_Motor::DeliverForce()
-{
-    return Snapshot().common_values[14];
-}
-// 旋转角度
-double Beckhoff_Motor::RotateDegree()
-{
-    return Snapshot().common_values[15];
-}
-// 抬钳�?
-double Beckhoff_Motor::Lifter()
-{
-    return Snapshot().common_values[13];
 }
 
 bool Beckhoff_Motor::ReadAsexPos(double dAsex_Pos[19])
@@ -516,13 +431,6 @@ bool Beckhoff_Motor::ReadAsexPos(double dAsex_Pos[19])
     }
     return true;
 }
-// 读取编码
-bool Beckhoff_Motor::ERCPOperateState(bool state) // true = 操作中、False = 未操作
-{
-    return WriteData("MAIN_ERCP.bERCP_Operate_State_FromMaster", sizeof(state), &state) ==
-           ADSERR_NOERR;
-}
-
 bool Beckhoff_Motor::IsERCPOnline()
 {
     const auto snapshot = Snapshot();
@@ -535,21 +443,6 @@ bool Beckhoff_Motor::IsERCPReady()
     const auto snapshot = Snapshot();
     return (snapshot.valid_sources & SnapshotErcp) != 0 &&
            (snapshot.ercp_flags & (1u << 1)) != 0;
-}
-
-double Beckhoff_Motor::GetERCPDeliverForce()
-{
-    return Snapshot().ercp_deliver_force;
-}
-
-double Beckhoff_Motor::GetERCPGuidwireForce()
-{
-    return Snapshot().guide_wire_force;
-}
-
-double Beckhoff_Motor::GetERCPDeliverPos()
-{
-    return Snapshot().ercp_deliver_position;
 }
 
 // ================================================================================
