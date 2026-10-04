@@ -12,11 +12,9 @@ enum class SnapshotConnectionState : std::uint8_t {
     Degraded = 3,
 };
 
-enum SnapshotGroup : std::uint8_t {
-    SnapshotCommon = 1u << 0,
-    // Bit 1 is reserved by the fixed Robot UDP V3 layout.
-    SnapshotErcpState = 1u << 2,
-    SnapshotErcpFeedback = 1u << 3,
+enum SnapshotSource : std::uint8_t {
+    SnapshotRobot = 1u << 0,
+    SnapshotErcp = 1u << 1,
 };
 
 struct GoldDiscreteCommand {
@@ -37,8 +35,7 @@ struct BeckhoffSnapshot {
     std::uint64_t poll_completed_unix_ns = 0;
     std::uint64_t published_unix_ns = 0;
     SnapshotConnectionState connection_state = SnapshotConnectionState::Disconnected;
-    std::uint8_t valid_groups = 0;
-    std::uint8_t stale_groups = 0;
+    std::uint8_t valid_sources = 0;
     std::uint32_t consecutive_failed_polls = 0;
     std::uint32_t overall_ads_error = 0;
     std::uint32_t common_ads_error = 0;
@@ -74,8 +71,9 @@ struct BeckhoffSnapshot {
     std::int16_t balloon_pressure = 0;
     double operator_position = 0;
 
-    // Common, reserved V3 slot, ERCP state, and ERCP feedback sample times.
-    std::array<std::uint64_t, 4> sampled_at_unix_ns{};
+    // Robot 本机完整取得该设备反馈的 Unix 纳秒时间；无效来源为零。
+    std::uint64_t robot_feedback_acquired_unix_ns = 0;
+    std::uint64_t ercp_feedback_acquired_unix_ns = 0;
 };
 
 } // namespace device::beckhoff

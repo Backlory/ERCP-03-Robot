@@ -3,7 +3,7 @@
 // AI AGENT WARNING: This file is managed by repository-root shared-wire.
 // Outside shared-wire, do not edit it directly; edit the canonical source and run shared-wire/sync.bat.
 // SYNC-SOURCE : shared-wire/robot_udp_v3.hpp
-// SYNC-VERSION: 8
+// SYNC-VERSION: 9
 // SYNC-RULE   : 修改后运行 shared-wire/sync.bat，再执行四端黄金测试。
 #pragma once
 
@@ -19,13 +19,17 @@
 namespace ercp::protocol::v3 {
 
 // 同步版本号:与文件头 SYNC-VERSION 保持一致;黄金测试将其打印进输出,供人工比对各端副本版本。
-constexpr int kRobotUdpV3SyncVersion = 8;
+constexpr int kRobotUdpV3SyncVersion = 9;
 
 using Bytes = std::vector<std::uint8_t>;
 
 constexpr std::uint32_t kMagic = 0x45524350u; // "ERCP"
 constexpr std::uint16_t kVersionMajor = 3;
 constexpr std::uint16_t kVersionMinor = 1;
+constexpr std::uint16_t kStatusVersionMinor = 2;
+constexpr std::uint8_t kRobotFeedbackSource = 1u << 0;
+constexpr std::uint8_t kErcpFeedbackSource = 1u << 1;
+constexpr std::uint8_t kFeedbackSourceMask = kRobotFeedbackSource | kErcpFeedbackSource;
 constexpr std::size_t kHeaderSize = 48;
 constexpr std::size_t kControlPayloadSize = 176;
 constexpr std::size_t kControlPacketSize = kHeaderSize + kControlPayloadSize;
@@ -257,8 +261,7 @@ struct AdsDiagnosticsPayload {
     std::uint64_t poll_completed_unix_ns = 0;
     std::uint64_t snapshot_published_unix_ns = 0;
     AdsConnectionState connection_state = AdsConnectionState::Disconnected;
-    std::uint8_t valid_groups = 0;
-    std::uint8_t stale_groups = 0;
+    std::uint8_t valid_sources = 0;
     std::uint32_t consecutive_failed_polls = 0;
     std::uint32_t overall_ads_error = 0;
     std::uint32_t common_ads_error = 0;
@@ -275,7 +278,9 @@ struct FullStatusPayload {
     ErcpFeedbackPayload ercp_feedback;
     AppliedCommandPayload applied_command;
     AdsDiagnosticsPayload ads_diagnostics;
-    std::array<std::uint64_t, 8> sampled_at_unix_ns{};
+    // Robot 完整取得设备反馈的 Unix 纳秒时间；无效来源必须为零。
+    std::uint64_t robot_feedback_acquired_unix_ns = 0;
+    std::uint64_t ercp_feedback_acquired_unix_ns = 0;
 };
 
 namespace detail {
@@ -458,7 +463,8 @@ inline bool validSourceFor(MessageType type, Source source)
 inline bool validHeader(const Header &header, MessageType expected, std::string *error)
 {
     if (header.magic != kMagic) return fail(error, "invalid magic");
-    if (header.version_major != kVersionMajor || header.version_minor != kVersionMinor) {
+    const auto minor = expected == MessageType::RobotStatus ? kStatusVersionMinor : kVersionMinor;
+    if (header.version_major != kVersionMajor || header.version_minor != minor) {
         return fail(error, "unsupported protocol version");
     }
     if (header.header_size != kHeaderSize) return fail(error, "invalid header size");
@@ -589,6 +595,11 @@ inline bool validKnownGroup(const StatusGroup &group, std::string *error)
     if (group.version != 1 || group.payload.size() != expected) {
         return fail(error, "known status group version or size mismatch");
     }
+    if (group.id != static_cast<std::uint16_t>(GroupId::BeckhoffCommon)
+        && group.id != static_cast<std::uint16_t>(GroupId::ErcpState)
+        && group.sampled_at_unix_ns != 0) {
+        return fail(error, "non-zero reserved group timestamp");
+    }
 
     // 阶段二：按组类型检查枚举、位域、浮点数和保留区的语义约束。
     switch (static_cast<GroupId>(group.id)) {
@@ -670,8 +681,8 @@ inline bool validKnownGroup(const StatusGroup &group, std::string *error)
         }
         return true;
     case GroupId::AdsDiagnostics:
-        if (group.payload[32] > 3 || (group.payload[33] & ~0x0Du) != 0
-            || (group.payload[34] & ~0x0Du) != 0 || group.payload[35] != 0) {
+        if (group.payload[32] > 3 || (group.payload[33] & ~kFeedbackSourceMask) != 0
+            || group.payload[34] != 0 || group.payload[35] != 0) {
             return fail(error, "invalid ADS diagnostics flags");
         }
         return true;
@@ -804,6 +815,25 @@ inline bool isFullStatus(const std::vector<StatusGroup> &groups)
     return true;
 }
 
+// 完整状态按设备来源校验取得时间和载荷，禁止无效来源携带历史反馈。
+inline bool validFeedbackSources(const std::vector<StatusGroup> &groups, std::string *error)
+{
+    if (!isFullStatus(groups)) return detail::fail(error, "full status groups are incomplete");
+    const auto flags = groups[6].payload[33];
+    for (const auto index : {1u, 3u}) {
+        const auto bit = index == 1 ? kRobotFeedbackSource : kErcpFeedbackSource;
+        const bool valid = (flags & bit) != 0;
+        if (valid != (groups[index].sampled_at_unix_ns != 0))
+            return detail::fail(error, "feedback validity and acquisition time disagree");
+        if (!valid && !detail::allZero(groups[index].payload, 0, groups[index].payload.size()))
+            return detail::fail(error, "invalid feedback source contains data");
+    }
+    if ((flags & kErcpFeedbackSource) == 0
+        && !detail::allZero(groups[4].payload, 0, groups[4].payload.size()))
+        return detail::fail(error, "invalid ERCP source contains feedback");
+    return true;
+}
+
 /**
  * @brief 功能：把可变状态组集合编码为 RobotStatus UDP 包。
  * @details 机制：先检查组数量、重复 ID、每组 schema 和总长度，再写目录与载荷；完整状态额外保持 1200 字节 wire 契约。
@@ -833,6 +863,7 @@ inline bool encodeStatus(const Header &header, const std::vector<StatusGroup> &g
     if (isFullStatus(groups) && payloadSize + kHeaderSize != 1200) {
         return detail::fail(error, "full status wire size changed");
     }
+    if (isFullStatus(groups) && !validFeedbackSources(groups, error)) return false;
     if (payloadSize + kHeaderSize > kMaxPacketSize) return detail::fail(error, "status packet too large");
 
     // 阶段二：按照目录头、组头、组载荷的固定线序写入输出缓冲区。
@@ -917,7 +948,7 @@ inline bool decodeFullStatus(const std::uint8_t *data, std::size_t size, StatusM
     std::string *error = nullptr)
 {
     if (!decodeStatus(data, size, message, error)) return false;
-    return isFullStatus(message.groups) ? true : detail::fail(error, "full status groups are incomplete");
+    return validFeedbackSources(message.groups, error);
 }
 
 namespace detail {
@@ -1030,7 +1061,7 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
         writer.u64(status.runtime.lifecycle_changed_unix_ns);
         writer.u64(status.runtime.accepted_command_received_unix_ns);
     }
-    groups.push_back(detail::group(GroupId::RobotRuntime, status.sampled_at_unix_ns[0], std::move(bytes)));
+    groups.push_back(detail::group(GroupId::RobotRuntime, 0, std::move(bytes)));
 
     // 阶段三：序列化 ERCP 状态、反馈和两条应用命令审计记录。
     bytes.clear();
@@ -1047,11 +1078,11 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
         writer.i32(status.beckhoff_common.scope_type);
         for (double value : status.beckhoff_common.values) writer.f64(value);
     }
-    groups.push_back(detail::group(GroupId::BeckhoffCommon, status.sampled_at_unix_ns[1], std::move(bytes)));
+    groups.push_back(detail::group(GroupId::BeckhoffCommon, status.robot_feedback_acquired_unix_ns, std::move(bytes)));
 
     bytes.assign(40, 0);
     groups.push_back(
-        detail::group(GroupId::Reserved, status.sampled_at_unix_ns[2], std::move(bytes)));
+        detail::group(GroupId::Reserved, 0, std::move(bytes)));
 
     // 阶段四：序列化 ADS 诊断及扩展保留组，形成完整八组快照。
     bytes.clear();
@@ -1065,7 +1096,7 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
         writer.i32(static_cast<std::int32_t>(status.ercp_state.move_status));
         writer.u64(0);
     }
-    groups.push_back(detail::group(GroupId::ErcpState, status.sampled_at_unix_ns[3], std::move(bytes)));
+    groups.push_back(detail::group(GroupId::ErcpState, status.ercp_feedback_acquired_unix_ns, std::move(bytes)));
 
     bytes.clear();
     {
@@ -1083,7 +1114,7 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
         for (int i = 0; i < 6; ++i) writer.u8(0);
         writer.f64(status.ercp_feedback.operator_position);
     }
-    groups.push_back(detail::group(GroupId::ErcpFeedback, status.sampled_at_unix_ns[4], std::move(bytes)));
+    groups.push_back(detail::group(GroupId::ErcpFeedback, 0, std::move(bytes)));
 
     bytes.clear();
     {
@@ -1091,7 +1122,7 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
         detail::writeAppliedCommand(writer, status.applied_command.latest_write_attempt);
         detail::writeAppliedCommand(writer, status.applied_command.last_successful_write);
     }
-    groups.push_back(detail::group(GroupId::AppliedCommand, status.sampled_at_unix_ns[5], std::move(bytes)));
+    groups.push_back(detail::group(GroupId::AppliedCommand, 0, std::move(bytes)));
 
     bytes.clear();
     {
@@ -1101,8 +1132,8 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
         writer.u64(status.ads_diagnostics.poll_completed_unix_ns);
         writer.u64(status.ads_diagnostics.snapshot_published_unix_ns);
         writer.u8(static_cast<std::uint8_t>(status.ads_diagnostics.connection_state));
-        writer.u8(status.ads_diagnostics.valid_groups);
-        writer.u8(status.ads_diagnostics.stale_groups);
+        writer.u8(status.ads_diagnostics.valid_sources);
+        writer.u8(0);
         writer.u8(0);
         writer.u32(status.ads_diagnostics.consecutive_failed_polls);
         writer.u32(status.ads_diagnostics.overall_ads_error);
@@ -1112,10 +1143,10 @@ inline std::vector<StatusGroup> buildFullStatusGroups(const FullStatusPayload &s
         writer.u32(status.ads_diagnostics.ercp_feedback_ads_error);
         writer.u32(status.ads_diagnostics.command_write_ads_error);
     }
-    groups.push_back(detail::group(GroupId::AdsDiagnostics, status.sampled_at_unix_ns[6], std::move(bytes)));
+    groups.push_back(detail::group(GroupId::AdsDiagnostics, 0, std::move(bytes)));
 
     bytes.assign(24, 0);
-    groups.push_back(detail::group(GroupId::Extension, status.sampled_at_unix_ns[7], std::move(bytes)));
+    groups.push_back(detail::group(GroupId::Extension, 0, std::move(bytes)));
     return groups;
 }
 
@@ -1135,13 +1166,16 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
     std::string *error = nullptr)
 {
     // 阶段一：确认输入包含完整组集合，并通过局部解析器统一记录采样时间。
-    if (!isFullStatus(message.groups)) return detail::fail(error, "full status groups are incomplete");
+    if (!validFeedbackSources(message.groups, error)) return false;
+    for (const auto &group : message.groups)
+        if (!detail::validKnownGroup(group, error)) return false;
     FullStatusPayload parsed;
+    parsed.robot_feedback_acquired_unix_ns = message.groups[1].sampled_at_unix_ns;
+    parsed.ercp_feedback_acquired_unix_ns = message.groups[3].sampled_at_unix_ns;
 
     const auto parseGroup = [&](GroupId id, auto &&parse) {
         const StatusGroup *group = detail::findGroup(message, id);
         if (group == nullptr) return false;
-        parsed.sampled_at_unix_ns[static_cast<std::size_t>(id) - 1] = group->sampled_at_unix_ns;
         detail::Reader reader(group->payload.data(), group->payload.size());
         return parse(reader) && reader.remaining() == 0;
     };
@@ -1232,8 +1266,8 @@ inline bool parseFullStatusPayload(const StatusMessage &message, FullStatusPaylo
                 || !reader.u64(parsed.ads_diagnostics.poll_started_unix_ns)
                 || !reader.u64(parsed.ads_diagnostics.poll_completed_unix_ns)
                 || !reader.u64(parsed.ads_diagnostics.snapshot_published_unix_ns)
-                || !reader.u8(connection) || !reader.u8(parsed.ads_diagnostics.valid_groups)
-                || !reader.u8(parsed.ads_diagnostics.stale_groups) || !reader.u8(reserved)
+                || !reader.u8(connection) || !reader.u8(parsed.ads_diagnostics.valid_sources)
+                || !reader.u8(reserved) || reserved != 0 || !reader.u8(reserved) || reserved != 0
                 || !reader.u32(parsed.ads_diagnostics.consecutive_failed_polls)
                 || !reader.u32(parsed.ads_diagnostics.overall_ads_error)
                 || !reader.u32(parsed.ads_diagnostics.common_ads_error)

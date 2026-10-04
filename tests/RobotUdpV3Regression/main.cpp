@@ -100,20 +100,14 @@ void TestBeckhoffFeedbackLeaves()
     Expect(snapshot.common_values[17] == 100.0 && snapshot.common_values[35] == 118.0,
            "the local snapshot keeps its 19-axis publication capacity");
 
-    // Local old-PLC simulation: the scalar leaves and early array elements
-    // succeed, while missing array elements and one missing BOOL are marked
-    // unavailable without invalidating the values that did succeed.
+    // 任意叶字段失败都必须清空整份主机器人反馈。
     errors[device::beckhoff::kFeedbackSwitchGasIndex] = 0x701;
     errors[device::beckhoff::kFeedbackForceSensorBaseIndex + 9] = 0x701;
     errors[device::beckhoff::kFeedbackAxesBaseIndex + 18] = 0x701;
     device::beckhoff::ApplyRobotFeedback(feedback, errors, snapshot);
-    Expect((snapshot.output_switches & (1u << 1)) == 0 &&
-               (snapshot.output_switches & (1u << 0)) != 0,
-           "missing leaf BOOL is unavailable without hiding other switches");
-    Expect(snapshot.common_values[3] == 10.0 && snapshot.common_values[12] == 0.0,
-           "available and unavailable force leaves are kept separate");
-    Expect(snapshot.common_values[17] == 100.0 && snapshot.common_values[35] == 0.0,
-           "available and unavailable axis leaves are kept separate");
+    Expect(snapshot.output_switches == 0 && snapshot.power_level == 0 &&
+               snapshot.common_values == std::array<double, 36>{} && snapshot.valid_sources == 0,
+           "partial leaf failure clears the complete Robot feedback");
 }
 
 /**
@@ -237,10 +231,13 @@ void TestFullStatus()
     status.applied_command.latest_write_attempt.source = protocol::Source::Master;
     status.applied_command.latest_write_attempt.result = protocol::ApplyResult::Succeeded;
     status.ads_diagnostics.snapshot_sequence = 99;
-    status.sampled_at_unix_ns.fill(1000);
+    status.ads_diagnostics.valid_sources = 3;
+    status.robot_feedback_acquired_unix_ns = 1000;
+    status.ercp_feedback_acquired_unix_ns = 1000;
 
     protocol::Header header;
     header.message_type = protocol::MessageType::RobotStatus;
+    header.version_minor = protocol::kStatusVersionMinor;
     header.source = protocol::Source::Robot;
     header.session_id = 7;
     header.sequence = 8;
@@ -266,6 +263,38 @@ void TestFullStatus()
                && decoded.applied_command.latest_write_attempt.source
                    == protocol::Source::Master,
            "applied-command emergency stop round-trips in the fixed status record");
+
+    for (const std::size_t offset : {64u, 432u, 528u, 624u, 1088u, 1168u, 1130u, 1131u}) {
+        auto invalid = bytes;
+        invalid[offset] = 1;
+        Expect(!protocol::decodeFullStatus(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
+               "reserved status timestamp and flag slots must remain zero");
+    }
+    for (const auto source : {1u, 2u}) {
+        auto invalid = bytes;
+        invalid[1129] &= static_cast<std::uint8_t>(~source);
+        Expect(!protocol::decodeFullStatus(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
+               "invalid source cannot retain acquisition time");
+        const std::size_t timeOffset = source == 1 ? 104 : 488;
+        std::fill_n(invalid.begin() + timeOffset, 8, std::uint8_t{0});
+        Expect(!protocol::decodeFullStatus(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
+               "invalid source cannot retain feedback fields");
+        if (source == 1) std::fill_n(invalid.begin() + 112, 312, std::uint8_t{0});
+        else {
+            std::fill_n(invalid.begin() + 496, 24, std::uint8_t{0});
+            std::fill_n(invalid.begin() + 536, 80, std::uint8_t{0});
+        }
+        Expect(protocol::decodeFullStatus(invalid.data(), invalid.size(), decodedHeader, decoded, &error),
+               "a failed source and a successful source share one valid status packet");
+    }
+    auto oldVersion = bytes;
+    oldVersion[7] = 1;
+    Expect(!protocol::decodeFullStatus(oldVersion.data(), oldVersion.size(), decodedHeader, decoded, &error),
+           "V3.1 status is rejected by the V3.2 contract");
+    auto unknownSource = bytes;
+    unknownSource[1129] = 7;
+    Expect(!protocol::decodeFullStatus(unknownSource.data(), unknownSource.size(), decodedHeader, decoded, &error),
+           "reserved feedback source bits must be zero");
 
     auto overlappingErcpFlags = bytes;
     constexpr std::size_t kErcpFlagsOffset = 496;
@@ -499,44 +528,30 @@ void TestControlCyclePolicy()
 }
 
 /**
- * @brief 验证 Beckhoff 状态组的有效/过期标志、可选 ERCP 清理和轮询诊断更新。
- * @details 分别模拟局部成功、完整失败、可选设备不可用以及成功/失败轮询收尾。
+ * @brief 验证两个设备的完整反馈、失败清空及独立诊断更新。
  */
 void TestBeckhoffSnapshotPolicy()
 {
     device::beckhoff::BeckhoffSnapshot snapshot;
-    snapshot.stale_groups = device::beckhoff::SnapshotCommon;
-    device::beckhoff::MarkSnapshotGroup(snapshot,
-                                        device::beckhoff::SnapshotCommon,
-                                        0,
-                                        true,
-                                        1234);
-    Expect((snapshot.valid_groups & device::beckhoff::SnapshotCommon) != 0 &&
-               (snapshot.stale_groups & device::beckhoff::SnapshotCommon) == 0 &&
-               snapshot.sampled_at_unix_ns[0] == 1234,
-           "a partially successful group becomes valid and fresh");
-
-    device::beckhoff::MarkSnapshotGroup(snapshot,
-                                        device::beckhoff::SnapshotErcpState,
-                                        2,
-                                        false,
-                                        9999);
-    Expect((snapshot.stale_groups & device::beckhoff::SnapshotErcpState) != 0 &&
-               snapshot.sampled_at_unix_ns[2] == 0,
-           "a fully failed group becomes stale without inventing a sample time");
-
-    snapshot.valid_groups |= device::beckhoff::SnapshotErcpState |
-                             device::beckhoff::SnapshotErcpFeedback;
-    snapshot.stale_groups |= device::beckhoff::SnapshotErcpFeedback;
-    snapshot.ercp_flags = 0xFFFF;
-    snapshot.sampled_at_unix_ns[2] = 1;
-    snapshot.sampled_at_unix_ns[3] = 2;
-    device::beckhoff::ClearOptionalErcpGroups(snapshot);
-    Expect((snapshot.valid_groups & (device::beckhoff::SnapshotErcpState |
-                                     device::beckhoff::SnapshotErcpFeedback)) == 0 &&
-               snapshot.ercp_flags == 0 && snapshot.sampled_at_unix_ns[2] == 0 &&
-               snapshot.sampled_at_unix_ns[3] == 0,
-           "an unavailable optional ERCP device clears only its optional groups");
+    device::beckhoff::CompleteFeedbackRead(snapshot, device::beckhoff::SnapshotRobot, true, 1234);
+    snapshot.common_values.fill(5);
+    snapshot.ercp_flags = 3;
+    snapshot.ercp_type = 1;
+    snapshot.operator_position = 7;
+    snapshot.ercp_feedback_ads_error = 0x701;
+    device::beckhoff::CompleteFeedbackRead(snapshot, device::beckhoff::SnapshotErcp, true, 2345);
+    Expect(snapshot.valid_sources == 3 && snapshot.robot_feedback_acquired_unix_ns == 1234 &&
+               snapshot.ercp_feedback_acquired_unix_ns == 2345,
+           "complete device reads have independent acquisition times");
+    device::beckhoff::CompleteFeedbackRead(snapshot, device::beckhoff::SnapshotErcp, false, 9999);
+    Expect(snapshot.valid_sources == 1 && snapshot.ercp_flags == 0 && snapshot.ercp_type == 0 &&
+               snapshot.operator_position == 0 && snapshot.ercp_feedback_acquired_unix_ns == 0 &&
+               snapshot.ercp_feedback_ads_error == 0x701 && snapshot.common_values[0] == 5,
+           "failed ERCP read clears state and feedback while preserving Robot and diagnostics");
+    device::beckhoff::CompleteFeedbackRead(snapshot, device::beckhoff::SnapshotRobot, false, 9999);
+    Expect(snapshot.valid_sources == 0 && snapshot.robot_feedback_acquired_unix_ns == 0 &&
+               snapshot.common_values == std::array<double, 36>{},
+           "failed Robot read clears all previous feedback");
 
     snapshot.overall_ads_error = 0;
     snapshot.consecutive_failed_polls = 7;
@@ -658,6 +673,7 @@ protocol::Header GoldenStatusHeader()
 {
     protocol::Header header;
     header.message_type = protocol::MessageType::RobotStatus;
+    header.version_minor = protocol::kStatusVersionMinor;
     header.source = protocol::Source::Robot;
     header.session_id = 0x1122334455667788ull;
     header.sequence = 42;
@@ -731,8 +747,7 @@ protocol::FullStatusPayload GoldenStatusPayload()
     s.ads_diagnostics.poll_completed_unix_ns = PU(928);
     s.ads_diagnostics.snapshot_published_unix_ns = PU(936);
     s.ads_diagnostics.connection_state = protocol::AdsConnectionState::Running;
-    s.ads_diagnostics.valid_groups = 0x0D;
-    s.ads_diagnostics.stale_groups = 0x01;
+    s.ads_diagnostics.valid_sources = 3;
     s.ads_diagnostics.consecutive_failed_polls = static_cast<std::uint32_t>(PU(948));
     s.ads_diagnostics.overall_ads_error = static_cast<std::uint32_t>(PU(952));
     s.ads_diagnostics.common_ads_error = static_cast<std::uint32_t>(PU(956));
@@ -740,7 +755,8 @@ protocol::FullStatusPayload GoldenStatusPayload()
     s.ads_diagnostics.ercp_state_ads_error = static_cast<std::uint32_t>(PU(964));
     s.ads_diagnostics.ercp_feedback_ads_error = static_cast<std::uint32_t>(PU(968));
     s.ads_diagnostics.command_write_ads_error = static_cast<std::uint32_t>(PU(972));
-    s.sampled_at_unix_ns = {PU(64), PU(104), PU(416), PU(472), PU(512), PU(632), PU(904), PU(984)};
+    s.robot_feedback_acquired_unix_ns = PU(104);
+    s.ercp_feedback_acquired_unix_ns = PU(488);
     return s;
 }
 
@@ -881,8 +897,7 @@ void TestGoldenStatusFixture()
             decoded.ads_diagnostics.snapshot_published_unix_ns ==
                 fixture.ads_diagnostics.snapshot_published_unix_ns &&
             decoded.ads_diagnostics.connection_state == fixture.ads_diagnostics.connection_state &&
-            decoded.ads_diagnostics.valid_groups == fixture.ads_diagnostics.valid_groups &&
-            decoded.ads_diagnostics.stale_groups == fixture.ads_diagnostics.stale_groups &&
+            decoded.ads_diagnostics.valid_sources == fixture.ads_diagnostics.valid_sources &&
             decoded.ads_diagnostics.consecutive_failed_polls ==
                 fixture.ads_diagnostics.consecutive_failed_polls &&
             decoded.ads_diagnostics.overall_ads_error ==
@@ -897,7 +912,8 @@ void TestGoldenStatusFixture()
             decoded.ads_diagnostics.command_write_ads_error ==
                 fixture.ads_diagnostics.command_write_ads_error,
         "golden status ADS diagnostics group matches the fixed input");
-    Expect(decoded.sampled_at_unix_ns == fixture.sampled_at_unix_ns,
+    Expect(decoded.robot_feedback_acquired_unix_ns == fixture.robot_feedback_acquired_unix_ns &&
+               decoded.ercp_feedback_acquired_unix_ns == fixture.ercp_feedback_acquired_unix_ns,
            "golden status sampled_at timestamps match the fixed input");
 }
 

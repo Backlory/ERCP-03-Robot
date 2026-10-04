@@ -8,43 +8,56 @@
 
 namespace device::beckhoff {
 
-inline void MarkSnapshotGroup(BeckhoffSnapshot &snapshot,
-                              SnapshotGroup group,
-                              std::size_t sample_index,
-                              bool any_read_succeeded,
-                              std::uint64_t sampled_at_unix_ns)
+// 清空一个来源的全部反馈，保留独立的 ADS 错误诊断。
+inline void ClearRobotFeedback(BeckhoffSnapshot &snapshot)
 {
-    const auto bit = static_cast<std::uint8_t>(group);
-    if (any_read_succeeded) {
-        snapshot.valid_groups |= bit;
-        snapshot.stale_groups &= static_cast<std::uint8_t>(~bit);
-        snapshot.sampled_at_unix_ns[sample_index] = sampled_at_unix_ns;
-    } else {
-        snapshot.stale_groups |= bit;
-    }
+    snapshot.valid_sources &= static_cast<std::uint8_t>(~SnapshotRobot);
+    snapshot.robot_feedback_acquired_unix_ns = 0;
+    snapshot.move_state = 0;
+    snapshot.output_switches = 0;
+    snapshot.power_level = 0;
+    snapshot.prepare_state = 0;
+    snapshot.error_flags = 0;
+    snapshot.drive_errors = 0;
+    snapshot.motor_errors = 0;
+    snapshot.scope_type = 0;
+    snapshot.common_values.fill(0);
 }
 
-/**
- * @brief 功能：清空不可用的 ERCP 可选状态组及其诊断标志。
- * @details 机制：重置 ERCP 字段、有效/过期位和采样时间，不影响公共 Beckhoff 状态组。
- */
-/**
- * @brief 功能：清空不可用的 ERCP 可选状态组及其诊断标志。
- * @details 机制：重置 ERCP 字段、有效/过期位和采样时间，不影响公共 Beckhoff 状态组。
- */
-inline void ClearOptionalErcpGroups(BeckhoffSnapshot &snapshot)
+inline void ClearErcpFeedback(BeckhoffSnapshot &snapshot)
 {
-    constexpr auto groups =
-        static_cast<std::uint8_t>(SnapshotErcpState | SnapshotErcpFeedback);
-    snapshot.ercp_state_ads_error = 0;
-    snapshot.ercp_feedback_ads_error = 0;
+    snapshot.valid_sources &= static_cast<std::uint8_t>(~SnapshotErcp);
+    snapshot.ercp_feedback_acquired_unix_ns = 0;
     snapshot.ercp_flags = 0;
     snapshot.ercp_drive_errors = 0;
     snapshot.ercp_motor_errors = 0;
-    snapshot.valid_groups &= static_cast<std::uint8_t>(~groups);
-    snapshot.stale_groups &= static_cast<std::uint8_t>(~groups);
-    snapshot.sampled_at_unix_ns[2] = 0;
-    snapshot.sampled_at_unix_ns[3] = 0;
+    snapshot.ercp_type = 0;
+    snapshot.ercp_move_status = 0;
+    snapshot.ercp_deliver_force = 0;
+    snapshot.guide_wire_force = 0;
+    snapshot.bow_force = 0;
+    snapshot.ercp_deliver_position = 0;
+    snapshot.guide_wire_position = 0;
+    snapshot.inject_current_position_01 = 0;
+    snapshot.inject_current_position_02 = 0;
+    snapshot.inject_state_01 = 0;
+    snapshot.inject_state_02 = 0;
+    snapshot.balloon_pressure = 0;
+    snapshot.operator_position = 0;
+}
+
+// ERCP 状态和数值反馈必须同时读取成功。失败立即清空该来源。
+inline void CompleteFeedbackRead(BeckhoffSnapshot &snapshot, SnapshotSource source,
+                                 bool all_reads_succeeded, std::uint64_t acquired_unix_ns)
+{
+    if (!all_reads_succeeded) {
+        if (source == SnapshotRobot) ClearRobotFeedback(snapshot);
+        else ClearErcpFeedback(snapshot);
+        return;
+    }
+    snapshot.valid_sources |= static_cast<std::uint8_t>(source);
+    if (source == SnapshotRobot) snapshot.robot_feedback_acquired_unix_ns = acquired_unix_ns;
+    else snapshot.ercp_feedback_acquired_unix_ns = acquired_unix_ns;
 }
 
 /**

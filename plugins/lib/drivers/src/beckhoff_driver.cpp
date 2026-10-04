@@ -41,14 +41,6 @@ std::array<std::string, Count> MakeIndexedSymbolNames(const char *prefix)
     return names;
 }
 
-template <typename ErrorContainer>
-bool AnySuccessful(const ErrorContainer &errors)
-{
-    return std::any_of(errors.begin(), errors.end(), [](std::uint32_t error) {
-        return error == ADSERR_NOERR;
-    });
-}
-
 template <typename RequestContainer, typename ErrorContainer>
 std::string FormatAdsReadFailures(const RequestContainer &requests,
                                   std::size_t count,
@@ -251,7 +243,8 @@ bool Beckhoff_Motor::CloseConn()
     {
         std::lock_guard<std::mutex> lock(m_snapshot_mutex);
         m_snapshot.connection_state = SnapshotConnectionState::Disconnected;
-        m_snapshot.stale_groups |= m_snapshot.valid_groups;
+        ClearRobotFeedback(m_snapshot);
+        ClearErcpFeedback(m_snapshot);
         m_snapshot.published_unix_ns = UnixNowNs();
     }
 
@@ -533,16 +526,14 @@ bool Beckhoff_Motor::ERCPOperateState(bool state) // true = 操作中、False = 
 bool Beckhoff_Motor::IsERCPOnline()
 {
     const auto snapshot = Snapshot();
-    return (snapshot.valid_groups & SnapshotErcpState) != 0 &&
-           (snapshot.stale_groups & SnapshotErcpState) == 0 &&
+    return (snapshot.valid_sources & SnapshotErcp) != 0 &&
            (snapshot.ercp_flags & (1u << 0)) != 0;
 }
 
 bool Beckhoff_Motor::IsERCPReady()
 {
     const auto snapshot = Snapshot();
-    return (snapshot.valid_groups & SnapshotErcpState) != 0 &&
-           (snapshot.stale_groups & SnapshotErcpState) == 0 &&
+    return (snapshot.valid_sources & SnapshotErcp) != 0 &&
            (snapshot.ercp_flags & (1u << 1)) != 0;
 }
 
@@ -879,7 +870,7 @@ bool Beckhoff_Motor::BuildAddr(string sIP, int iPort, AmsAddr &bfAddr)
 
 /**
  * @brief 功能：按公共 PLC 字段读取计划构造 Beckhoff 通用状态快照。
- * @details 机制：先集中登记固定 symbol 与目标内存，再批量读取并聚合每项错误，最后只提交成功字段并更新 valid/stale 诊断。
+ * @details 全部请求成功才提交主机器人反馈，取得时间使用 Robot 本机 Unix 纳秒；任意失败清空整个来源。
  */
 void Beckhoff_Motor::PollCommonSnapshot(BeckhoffSnapshot &next,
                                         std::string &lastFailureDetails)
@@ -921,37 +912,36 @@ void Beckhoff_Motor::PollCommonSnapshot(BeckhoffSnapshot &next,
         add(kAxesPositionNames[i].c_str(), kAdsLrealBytes, &feedback.axes_pos[i]);
 
     const auto commonError = ReadDataBatch(requests.data(), requestCount, itemErrors.data());
+    const auto acquiredUnixNs = UnixNowNs();
     for (std::size_t i = 0; i < kRobotFeedbackLeafCount; ++i)
         feedbackErrors[i] = itemErrors[feedbackStart + i];
 
-    std::size_t successfulItems = 0;
-    for (std::size_t i = 0; i < requestCount; ++i) {
-        if (itemErrors[i] == ADSERR_NOERR) {
-            ++successfulItems;
-        }
-    }
     const auto failureDetails = FormatAdsReadFailures(requests, requestCount, itemErrors);
     ReportAdsReadFailures("Common", commonError, failureDetails, lastFailureDetails);
 
     next.common_ads_error = commonError;
     KeepFirstError(next.overall_ads_error, commonError);
-    next.move_state = itemErrors[0] == ADSERR_NOERR ? moveState : 0;
-    next.prepare_state = itemErrors[1] == ADSERR_NOERR && prepareState == 1 ? 1 : 0;
-    next.scope_type = itemErrors[2] == ADSERR_NOERR ? scopeType : 0;
+    if (commonError != ADSERR_NOERR) {
+        ClearRobotFeedback(next);
+        return;
+    }
+    next.move_state = moveState;
+    next.prepare_state = prepareState == 1 ? 1 : 0;
+    next.scope_type = scopeType;
     next.error_flags = 0;
     next.drive_errors = 0;
     next.motor_errors = 0;
     for (std::size_t i = 0; i < kMainMotorErrorCount; ++i) {
-        if (itemErrors[3 + i] == ADSERR_NOERR && mainMotorErrors[i])
+        if (mainMotorErrors[i])
             next.motor_errors |= 1u << i;
     }
     ApplyRobotFeedback(feedback, feedbackErrors, next);
-    MarkSnapshotGroup(next, SnapshotCommon, 0, successfulItems != 0, UnixNowNs());
+    CompleteFeedbackRead(next, SnapshotRobot, true, acquiredUnixNs);
 }
 
 /**
  * @brief 功能：读取 ERCP 在线、就绪、错误位、类型和运动状态并填充状态组。
- * @details 机制：按固定请求索引映射每个字段，只有对应读取成功时才设置语义位，随后标记 ERCP 状态组的有效性。
+ * @details 全部状态字段成功才提交；完整来源的有效性由 PollErcpSnapshot 联合数值反馈判定。
  */
 std::uint32_t Beckhoff_Motor::PollErcpState(BeckhoffSnapshot &next,
                                             std::string &lastFailureDetails)
@@ -988,32 +978,29 @@ std::uint32_t Beckhoff_Motor::PollErcpState(BeckhoffSnapshot &next,
     ReportAdsReadFailures("ERCP state", result, failureDetails, lastFailureDetails);
     next.ercp_state_ads_error = result;
     KeepFirstError(next.overall_ads_error, result);
+    if (result != ADSERR_NOERR) return result;
     next.ercp_flags = static_cast<std::uint16_t>(
-        (errors[0] == ADSERR_NOERR && online ? 1u << 0 : 0u) |
-        (errors[1] == ADSERR_NOERR && ready ? 1u << 1 : 0u) |
-        (errors[2] == ADSERR_NOERR && driveError ? 1u << 3 : 0u) |
-        (errors[kErcpLoadDirectionRequestIndex] == ADSERR_NOERR && loadDirection ? 1u << 2 : 0u) |
-        (errors[kErcpMotorErrorFlagRequestIndex] == ADSERR_NOERR && motorError ? 1u << 4 : 0u));
+        (online ? 1u << 0 : 0u) | (ready ? 1u << 1 : 0u) |
+        (driveError ? 1u << 3 : 0u) | (loadDirection ? 1u << 2 : 0u) |
+        (motorError ? 1u << 4 : 0u));
     next.ercp_drive_errors = 0;
     for (std::size_t i = 0; i < kErcpDriveErrorCount; ++i) {
-        if (errors[kErcpDriveErrorsRequestStart + i] == ADSERR_NOERR && driveErrors[i])
+        if (driveErrors[i])
             next.ercp_drive_errors |= static_cast<std::uint16_t>(1u << i);
     }
     next.ercp_motor_errors = 0;
     for (std::size_t i = 0; i < kErcpMotorErrorCount; ++i) {
-        if (errors[kErcpMotorErrorsRequestStart + i] == ADSERR_NOERR && motorErrors[i])
+        if (motorErrors[i])
             next.ercp_motor_errors |= static_cast<std::uint16_t>(1u << i);
     }
-    next.ercp_type = errors[kErcpTypeRequestIndex] == ADSERR_NOERR ? type : 0;
-    next.ercp_move_status =
-        errors[kErcpMoveStatusRequestIndex] == ADSERR_NOERR ? moveStatus : 0;
-    MarkSnapshotGroup(next, SnapshotErcpState, 2, AnySuccessful(errors), UnixNowNs());
+    next.ercp_type = type;
+    next.ercp_move_status = moveStatus;
     return result;
 }
 
 /**
  * @brief 功能：读取 ERCP 力、位置、注入状态和球囊压力反馈。
- * @details 机制：一次批量提交 11 个叶字段，逐项按错误码选择真实值或安全零值，并更新 ERCP feedback 诊断组。
+ * @details 全部数值字段成功才提交；完整来源的有效性由 PollErcpSnapshot 联合状态字段判定。
  */
 std::uint32_t Beckhoff_Motor::PollErcpFeedback(BeckhoffSnapshot &next,
                                                std::string &lastFailureDetails)
@@ -1044,28 +1031,31 @@ std::uint32_t Beckhoff_Motor::PollErcpFeedback(BeckhoffSnapshot &next,
     }};
     std::array<std::uint32_t, requests.size()> errors{};
     const auto result = ReadDataBatch(requests.data(), requests.size(), errors.data());
+    const auto acquiredUnixNs = UnixNowNs();
     const auto failureDetails = FormatAdsReadFailures(requests, requests.size(), errors);
     ReportAdsReadFailures("ERCP feedback", result, failureDetails, lastFailureDetails);
     next.ercp_feedback_ads_error = result;
     KeepFirstError(next.overall_ads_error, result);
-    next.ercp_deliver_force = errors[0] == ADSERR_NOERR ? deliverForce : 0;
-    next.guide_wire_force = errors[1] == ADSERR_NOERR ? guideWireForce : 0;
-    next.bow_force = errors[2] == ADSERR_NOERR ? bowForce : 0;
-    next.ercp_deliver_position = errors[3] == ADSERR_NOERR ? deliverPosition : 0;
-    next.guide_wire_position = errors[4] == ADSERR_NOERR ? guideWirePosition : 0;
-    next.inject_current_position_01 = errors[5] == ADSERR_NOERR ? injectPosition01 : 0;
-    next.inject_current_position_02 = errors[6] == ADSERR_NOERR ? injectPosition02 : 0;
-    next.inject_state_01 = errors[7] == ADSERR_NOERR ? injectState01 : 0;
-    next.inject_state_02 = errors[8] == ADSERR_NOERR ? injectState02 : 0;
-    next.balloon_pressure = errors[9] == ADSERR_NOERR ? balloonPressure : 0;
-    next.operator_position = errors[10] == ADSERR_NOERR ? operatorPosition : 0;
-    MarkSnapshotGroup(next, SnapshotErcpFeedback, 3, AnySuccessful(errors), UnixNowNs());
+    if (result != ADSERR_NOERR) return result;
+    next.ercp_deliver_force = deliverForce;
+    next.guide_wire_force = guideWireForce;
+    next.bow_force = bowForce;
+    next.ercp_deliver_position = deliverPosition;
+    next.guide_wire_position = guideWirePosition;
+    next.inject_current_position_01 = injectPosition01;
+    next.inject_current_position_02 = injectPosition02;
+    next.inject_state_01 = injectState01;
+    next.inject_state_02 = injectState02;
+    next.balloon_pressure = balloonPressure;
+    next.operator_position = operatorPosition;
+    // 最后一批反馈读取完成时间；来源有效性随后结合 ERCP 状态读取结果确定。
+    next.ercp_feedback_acquired_unix_ns = acquiredUnixNs;
     return result;
 }
 
 /**
  * @brief 功能：管理 ERCP 可选字段的探测、轮询和连续失败降级。
- * @details 机制：不可用时每秒探测一次；可用时同时读取状态/反馈，连续三轮失败后清除可选组并回到探测状态。
+ * @details 状态及数值反馈全部成功才发布同一个取得时间；任意失败立即清空来源。接口不可用时每秒探测一次。
  */
 void Beckhoff_Motor::PollErcpSnapshot(BeckhoffSnapshot &next,
                                       std::chrono::steady_clock::time_point cycleStarted,
@@ -1102,12 +1092,17 @@ void Beckhoff_Motor::PollErcpSnapshot(BeckhoffSnapshot &next,
     }
 
     if (!m_ercp_available.load(std::memory_order_acquire)) {
-        ClearOptionalErcpGroups(next);
+        ClearErcpFeedback(next);
+        next.ercp_state_ads_error = 0;
+        next.ercp_feedback_ads_error = 0;
         return;
     }
 
     const auto stateError = PollErcpState(next, lastStateFailureDetails);
     const auto feedbackError = PollErcpFeedback(next, lastFeedbackFailureDetails);
+    CompleteFeedbackRead(next, SnapshotErcp,
+                         stateError == ADSERR_NOERR && feedbackError == ADSERR_NOERR,
+                         next.ercp_feedback_acquired_unix_ns);
     if (stateError == ADSERR_NOERR && feedbackError == ADSERR_NOERR) {
         m_ercp_failed_polls = 0;
     } else {
@@ -1121,8 +1116,6 @@ void Beckhoff_Motor::PollErcpSnapshot(BeckhoffSnapshot &next,
         } else if (++m_ercp_failed_polls >= 3) {
             m_ercp_available.store(false, std::memory_order_release);
             m_ercp_failed_polls = 0;
-            next.valid_groups &=
-                static_cast<std::uint8_t>(~(SnapshotErcpState | SnapshotErcpFeedback));
             nextProbe = cycleStarted + std::chrono::seconds(1);
         }
     }

@@ -632,16 +632,8 @@ std::uint64_t YunSBot::_base::LifecycleChangedUnixNs() const
  */
 protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
 {
-    // 阶段一：读取最新 Beckhoff 快照，只对新的、有效的 common 采样生成状态包。
+    // 每次发布都包含最新读取结果，包括无效来源；取得时间仅随成功读取更新。
     const auto snapshot = GetRobot().BeckhoffSnapshot();
-    const auto common_sample_unix_ns = snapshot.sampled_at_unix_ns[0];
-    const bool has_fresh_common_sample =
-        (snapshot.valid_groups & device::beckhoff::SnapshotCommon) != 0 &&
-        (snapshot.stale_groups & device::beckhoff::SnapshotCommon) == 0 &&
-        common_sample_unix_ns != 0;
-    if (!has_fresh_common_sample || common_sample_unix_ns == m_last_sent_common_sample_unix_ns) {
-        return {};
-    }
 
     // 阶段二：把生命周期、Beckhoff、ERCP 和应用命令审计信息映射到协议载荷。
     const auto now = robot_udp_v3::UnixNowNs();
@@ -704,8 +696,9 @@ protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
     status.ads_diagnostics.snapshot_published_unix_ns = snapshot.published_unix_ns;
     status.ads_diagnostics.connection_state =
         static_cast<protocol::v3::AdsConnectionState>(snapshot.connection_state);
-    status.ads_diagnostics.valid_groups = snapshot.valid_groups;
-    status.ads_diagnostics.stale_groups = snapshot.stale_groups;
+    status.ads_diagnostics.valid_sources = snapshot.valid_sources;
+    status.robot_feedback_acquired_unix_ns = snapshot.robot_feedback_acquired_unix_ns;
+    status.ercp_feedback_acquired_unix_ns = snapshot.ercp_feedback_acquired_unix_ns;
     status.ads_diagnostics.consecutive_failed_polls = snapshot.consecutive_failed_polls;
     status.ads_diagnostics.overall_ads_error = snapshot.overall_ads_error;
     status.ads_diagnostics.common_ads_error = snapshot.common_ads_error;
@@ -715,11 +708,13 @@ protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
     status.ads_diagnostics.command_write_ads_error =
         applied_commands.latest_write_attempt.ads_error;
 
-    // 阶段三：清理非有限数值，并把对应状态组标记为过期，避免 NaN 进入 wire 数据。
-    for (double &value : status.beckhoff_common.values) {
+    // 非有限反馈使整个设备来源无效，清空该设备全部数据和取得时间。
+    for (const double value : status.beckhoff_common.values) {
         if (!std::isfinite(value)) {
-            value = 0;
-            status.ads_diagnostics.stale_groups |= device::beckhoff::SnapshotCommon;
+            status.beckhoff_common = {};
+            status.robot_feedback_acquired_unix_ns = 0;
+            status.ads_diagnostics.valid_sources &= ~protocol::v3::kRobotFeedbackSource;
+            break;
         }
     }
     double *ercpValues[] = {&status.ercp_feedback.ercp_deliver_force,
@@ -732,22 +727,16 @@ protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
                             &status.ercp_feedback.operator_position};
     for (double *value : ercpValues) {
         if (!std::isfinite(*value)) {
-            *value = 0;
-            status.ads_diagnostics.stale_groups |= device::beckhoff::SnapshotErcpFeedback;
+            status.ercp_state = {};
+            status.ercp_feedback = {};
+            status.ercp_feedback_acquired_unix_ns = 0;
+            status.ads_diagnostics.valid_sources &= ~protocol::v3::kErcpFeedbackSource;
+            break;
         }
     }
 
-    // 阶段四：填充采样时间和 V3 头，编码成功后才推进“已发送采样”标记。
-    status.sampled_at_unix_ns = {now,
-                                 snapshot.sampled_at_unix_ns[0],
-                                 snapshot.sampled_at_unix_ns[1],
-                                 snapshot.sampled_at_unix_ns[2],
-                                 snapshot.sampled_at_unix_ns[3],
-                                 now,
-                                 snapshot.published_unix_ns,
-                                 now};
-
     protocol::v3::Header header;
+    header.version_minor = protocol::v3::kStatusVersionMinor;
     header.message_type = protocol::v3::MessageType::RobotStatus;
     header.source = protocol::v3::Source::Robot;
     header.session_id = m_status_session_id;
@@ -760,8 +749,6 @@ protocol::v3::Bytes YunSBot::_base::BuildStatusPacket()
         ROBOT_ERROR(GetSettings().Basic.Verbose() > 0,
                     fmt::format("Robot V3 status encode failed: {}", error))
         packet.clear();
-    } else {
-        m_last_sent_common_sample_unix_ns = common_sample_unix_ns;
     }
     return packet;
 }

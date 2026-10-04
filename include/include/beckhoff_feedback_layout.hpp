@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-#include "beckhoff_snapshot.hpp"
+#include "beckhoff_snapshot_policy.hpp"
 
 namespace device::beckhoff {
 
@@ -38,10 +38,7 @@ struct RobotFeedbackLeaves {
     double follow_force = 0;
 };
 
-// One error slot per static leaf request. A zero slot means that the leaf is
-// available for this poll; a non-zero slot means that only that leaf is
-// unavailable. The array is intentionally local to the read/apply seam and
-// is not added to the UDP status model.
+// 每个请求保留独立 ADS 错误码，用于诊断完整反馈读取失败的原因。
 constexpr std::size_t kFeedbackFollowLengthIndex = 0;
 constexpr std::size_t kFeedbackSwitchWaterIndex = 1;
 constexpr std::size_t kFeedbackSwitchGasIndex = 2;
@@ -61,58 +58,43 @@ constexpr std::size_t kRobotFeedbackLeafCount =
 
 using RobotFeedbackLeafErrors = std::array<std::uint32_t, kRobotFeedbackLeafCount>;
 
-inline bool FeedbackLeafAvailable(const RobotFeedbackLeafErrors &errors, std::size_t index)
-{
-    return errors[index] == 0;
-}
-
 /**
- * @brief 将 Beckhoff 反馈叶字段按独立读取结果映射到统一状态快照。
- * @details 每个字段只在对应 ADS 读取成功时写入；失败字段清零，避免把旧值误当成当前有效反馈。
+ * @brief 将完整取得的 Beckhoff 反馈映射到统一状态快照。
+ * @details 任意叶字段读取失败时清空主机器人来源；有效性及取得时间由完整轮询设置。
  */
-// Apply only values whose corresponding leaf read succeeded. Failed leaves
-// are cleared in the local snapshot and represented by common_ads_error plus
-// the rate-limited field log in the ADS adapter; no startup policy is applied
-// here.
 inline void ApplyRobotFeedback(const RobotFeedbackLeaves &feedback,
                                const RobotFeedbackLeafErrors &errors,
                                BeckhoffSnapshot &snapshot)
 {
-    // 阶段一：把每个叶字段的错误码转换为可用性判断；阶段二：按 PLC/状态快照索引映射开关、连续值和轴位置。
-    const auto available = [&](std::size_t index) {
-        return FeedbackLeafAvailable(errors, index);
-    };
-    const auto applyDouble = [&](double &target, double value, std::size_t index) {
-        target = available(index) ? value : 0;
-    };
-
+    for (const auto error : errors) {
+        if (error != 0) {
+            ClearRobotFeedback(snapshot);
+            return;
+        }
+    }
     snapshot.output_switches = 0;
-    if (available(kFeedbackSwitchWaterIndex) && feedback.switch_water)
+    if (feedback.switch_water)
         snapshot.output_switches |= static_cast<std::uint16_t>(1u << 0);
-    if (available(kFeedbackSwitchGasIndex) && feedback.switch_gas)
+    if (feedback.switch_gas)
         snapshot.output_switches |= static_cast<std::uint16_t>(1u << 1);
-    if (available(kFeedbackSwitchSuckIndex) && feedback.switch_suck)
+    if (feedback.switch_suck)
         snapshot.output_switches |= static_cast<std::uint16_t>(1u << 2);
 
-    snapshot.power_level = available(kFeedbackPowerLevelIndex) ? feedback.power_level : 0;
-    applyDouble(snapshot.common_values[0], feedback.follow_length, kFeedbackFollowLengthIndex);
-    applyDouble(snapshot.common_values[1], feedback.big_wheel, kFeedbackBigWheelIndex);
-    applyDouble(snapshot.common_values[2], feedback.small_wheel, kFeedbackSmallWheelIndex);
+    snapshot.power_level = feedback.power_level;
+    snapshot.common_values[0] = feedback.follow_length;
+    snapshot.common_values[1] = feedback.big_wheel;
+    snapshot.common_values[2] = feedback.small_wheel;
 
     for (std::size_t i = 0; i < kRobotForceSensorCount; ++i) {
-        applyDouble(snapshot.common_values[3 + i],
-                    feedback.force_sensor[i],
-                    kFeedbackForceSensorBaseIndex + i);
+        snapshot.common_values[3 + i] = feedback.force_sensor[i];
     }
-    applyDouble(snapshot.common_values[13], feedback.lifter, kFeedbackLifterIndex);
-    applyDouble(snapshot.common_values[14], feedback.deliver_force, kFeedbackDeliverForceIndex);
-    applyDouble(snapshot.common_values[15], feedback.rotate_degree, kFeedbackRotateDegreeIndex);
-    applyDouble(snapshot.common_values[16], feedback.follow_force, kFeedbackFollowForceIndex);
+    snapshot.common_values[13] = feedback.lifter;
+    snapshot.common_values[14] = feedback.deliver_force;
+    snapshot.common_values[15] = feedback.rotate_degree;
+    snapshot.common_values[16] = feedback.follow_force;
 
     for (std::size_t i = 0; i < kRobotPublishedAxisCount; ++i) {
-        applyDouble(snapshot.common_values[17 + i],
-                    feedback.axes_pos[i],
-                    kFeedbackAxesBaseIndex + i);
+        snapshot.common_values[17 + i] = feedback.axes_pos[i];
     }
 }
 

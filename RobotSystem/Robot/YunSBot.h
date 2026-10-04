@@ -158,7 +158,6 @@ public:
         bool m_has_written_emergency_stop = false;
         const std::uint64_t m_status_session_id;
         std::uint64_t m_status_sequence = 0;
-        std::uint64_t m_last_sent_common_sample_unix_ns = 0;
 
         void StartControlThreads();
         void ExitControlThreads();
