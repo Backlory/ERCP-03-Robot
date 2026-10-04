@@ -1,5 +1,7 @@
-﻿#include <boost/bimap.hpp>
-#include <boost/assign.hpp>
+﻿#include <algorithm>
+#include <functional>
+#include <map>
+#include <sstream>
 
 #include "server.interface.h"
 
@@ -15,20 +17,11 @@ using namespace ercp;
 
 namespace server {
 
-namespace motor {
-extern std::map<motor_t, std::string> motor_names;
-}
-
 namespace robot {
 
 bool init()
 {
     return YunSBot::GetInstance().base.Start(1);
-}
-
-bool start()
-{
-    return true;
 }
 
 bool close()
@@ -39,16 +32,6 @@ bool close()
 bool emergency_stop(bool active)
 {
     return YunSBot::GetInstance().base.SetRpcEmergencyStop(active);
-}
-
-bool interrupt()
-{
-    return true;
-}
-
-bool skip()
-{
-    return true;
 }
 
 //-----------------------------------------------------------------------------
@@ -73,19 +56,9 @@ std::string get_time()
     return ilsr::Time::logtime();
 }
 
-bool is_robot_ready()
-{
-    return true;
-}
-
 bool is_robot_running()
 {
     return YunSBot::GetInstance().base.IsRobotRunning();
-}
-
-bool is_robot_errored()
-{
-    return false;
 }
 
 bool is_logging()
@@ -201,8 +174,6 @@ int get_device_state(std::string type)
 
 //-----------------------------------------------------------------------------
 
-#include <sstream>
-
 namespace settings {
 
 std::string get_setting_config()
@@ -228,68 +199,6 @@ bool update_settings(std::string config)
 }
 
 } // namespace settings
-
-//-----------------------------------------------------------------------------
-
-namespace motor {
-
-// clang-format off
-    using bimotor = boost::bimaps::bimap<motor_t, std::string>;
-    bimotor motor_mapper = boost::assign::list_of<bimotor::relation>
-        (motor_t::arm_1, "a1")
-        (motor_t::arm_2, "a2")
-        (motor_t::arm_3, "a3")
-        (motor_t::arm_4, "a4")
-        (motor_t::feed_move, "fm")
-        (motor_t::feed_clamp, "fc")
-        (motor_t::oper_big, "ob")
-        (motor_t::oper_small, "os")
-        (motor_t::oper_pincer, "op")
-        (motor_t::oper_rotate, "or")
-        (motor_t::cutter_rot, "cr")
-        (motor_t::cutter_feed, "cf")
-        (motor_t::cutter_bend, "cc")
-        (motor_t::cutter_push, "cp");
-
-    std::map<motor_t, std::string> motor_names{
-        {motor_t::arm_1,           u8"臂1"},
-        {motor_t::arm_2,           u8"臂2"},
-        {motor_t::arm_3,           u8"臂3"},
-        {motor_t::arm_4,           u8"臂4"},
-        {motor_t::feed_move,       u8"输送"},
-        {motor_t::feed_clamp,      u8"夹紧"},
-        {motor_t::oper_big,        u8"大拨轮"},
-        {motor_t::oper_small,      u8"小拨轮"},
-        {motor_t::oper_pincer,     u8"抬钳器"},
-        {motor_t::oper_rotate,     u8"镜体旋转"},
-        {motor_t::cutter_rot,      u8"切开刀摆转"},
-        {motor_t::cutter_feed,     u8"切开刀输送"},
-        {motor_t::cutter_bend,     u8"切开刀拉弓"},
-        {motor_t::cutter_push,     u8"切开刀送刀"},
-    };
-// clang-format on
-
-motor_t str2mid(std::string id)
-{
-    return motor_mapper.right.at(id);
-}
-
-std::string mid2str(motor_t id)
-{
-    return motor_mapper.left.at(id);
-}
-
-bool valid_str(std::string id)
-{
-    return motor_mapper.right.find(id) != motor_mapper.right.end();
-}
-
-bool valid_mid(motor_t id)
-{
-    return motor_mapper.left.find(id) != motor_mapper.left.end();
-}
-
-} // namespace motor
 
 //-----------------------------------------------------------------------------
 
@@ -365,125 +274,40 @@ double get_sensor_value(int id)
 
 namespace gpio {
 
-// clang-format off
-    static const std::map<gpio_input_t, std::string> InputIOConfigs = {
-
-    };
-
-    static const std::map<gpio_output_t, std::string> OutputIOConfigs = {
-       { gas   , u8"打气" },
-       { water , u8"喷水" },
-       { suct  , u8"吸取" },
-    };
-// clang-format on
+static const std::map<gpio_input_t, std::string> InputIOConfigs = {};
+static const std::map<gpio_output_t, std::string> OutputIOConfigs = {
+    {gas, u8"打气"}, {water, u8"喷水"}, {suct, u8"吸取"}};
 
 std::vector<gpio_input_t> get_gpio_inputs()
 {
-    std::vector<gpio_input_t> ids(InputIOConfigs.size());
-    std::transform(InputIOConfigs.begin(), InputIOConfigs.end(), ids.begin(), [](auto m) {
-        return m.first;
-    });
+    std::vector<gpio_input_t> ids;
+    for (const auto &entry : InputIOConfigs)
+        ids.push_back(entry.first);
     return ids;
 }
 
 std::string get_input_name(gpio_input_t id)
 {
-    if (InputIOConfigs.find(id) != InputIOConfigs.end()) {
-        return InputIOConfigs.at(id);
-    }
-    return "";
+    const auto entry = InputIOConfigs.find(id);
+    return entry != InputIOConfigs.end() ? entry->second : "";
 }
-
-//-----------------------------------------------------------------------------
 
 std::vector<gpio_output_t> get_gpio_outputs()
 {
-    std::vector<gpio_output_t> ids(OutputIOConfigs.size());
-    std::transform(OutputIOConfigs.begin(), OutputIOConfigs.end(), ids.begin(), [](auto m) {
-        return m.first;
-    });
+    std::vector<gpio_output_t> ids;
+    for (const auto &entry : OutputIOConfigs)
+        ids.push_back(entry.first);
     return ids;
 }
 
 std::string get_output_name(gpio_output_t id)
 {
-    if (OutputIOConfigs.find(id) != OutputIOConfigs.end()) {
-        return OutputIOConfigs.at(id);
-    }
-    return "";
-}
-
-bool set_output_state(gpio_output_t id, bool on)
-{
-    return true;
-}
-
-uint32_t get_outputs_state()
-{
-    return true;
+    const auto entry = OutputIOConfigs.find(id);
+    return entry != OutputIOConfigs.end() ? entry->second : "";
 }
 
 } // namespace gpio
 
-//-----------------------------------------------------------------------------
-
-namespace manuplator {
-
-bool get_arm_pose(Sophus::Vector6d &pose)
-{
-    return true;
-}
-
-bool get_arm_joints(Sophus::Vector6d &pos)
-{
-    return true;
-}
-
-bool get_arm_velocity(Sophus::Vector6d &vel)
-{
-    return true;
-}
-
-bool get_arm_target(Sophus::Vector6d &vel)
-{
-    return true;
-}
-
-bool is_arm_stopped()
-{
-    return true;
-}
-
-bool is_arm_arrived()
-{
-    return true;
-}
-
-//-----------------------------------------------------------------------------
-
-bool move_arm_rel(Sophus::Vector6d dpose, bool frame_base)
-{
-    return true;
-}
-
-bool init_arm()
-{
-    return true;
-}
-
-bool stop_arm()
-{
-    return true;
-}
-
-bool is_arm_inited()
-{
-    return true;
-}
-
-} // namespace manuplator
-
-//-----------------------------------------------------------------------------
 namespace beckhoffator {
 bool isOpen()
 {

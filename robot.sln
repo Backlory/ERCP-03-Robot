@@ -12,12 +12,18 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RobotUdpV3Regression", "tes
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "RobotTimingProbe", "tests\RobotTimingProbe\RobotTimingProbe.vcxproj", "{A8C1D5D7-8A4B-4C9E-9BF3-1C6AF2C8D7A1}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "HttpApiRegression", "tests\HttpApiRegression\HttpApiRegression.vcxproj", "{BB695F4C-7049-4BD1-9BF4-CC2B20B73F98}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
 		Release|x64 = Release|x64
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BB695F4C-7049-4BD1-9BF4-CC2B20B73F98}.Debug|x64.ActiveCfg = Debug|x64
+		{BB695F4C-7049-4BD1-9BF4-CC2B20B73F98}.Debug|x64.Build.0 = Debug|x64
+		{BB695F4C-7049-4BD1-9BF4-CC2B20B73F98}.Release|x64.ActiveCfg = Release|x64
+		{BB695F4C-7049-4BD1-9BF4-CC2B20B73F98}.Release|x64.Build.0 = Release|x64
 		{EABF9B7D-2344-46D3-9AB3-64F6E10A4C08}.Debug|x64.ActiveCfg = Debug|x64
 		{EABF9B7D-2344-46D3-9AB3-64F6E10A4C08}.Debug|x64.Build.0 = Debug|x64
 		{EABF9B7D-2344-46D3-9AB3-64F6E10A4C08}.Release|x64.ActiveCfg = Release|x64

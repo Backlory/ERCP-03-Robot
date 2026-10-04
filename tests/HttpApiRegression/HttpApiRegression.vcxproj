@@ -1,0 +1,65 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <ProjectGuid>{BB695F4C-7049-4BD1-9BF4-CC2B20B73F98}</ProjectGuid>
+    <RootNamespace>HttpApiRegression</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+    <PreferredToolArchitecture>x64</PreferredToolArchitecture>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <CharacterSet>Unicode</CharacterSet>
+    <PlatformToolset>v142</PlatformToolset>
+    <UseDebugLibraries Condition="'$(Configuration)' == 'Debug'">true</UseDebugLibraries>
+    <UseDebugLibraries Condition="'$(Configuration)' == 'Release'">false</UseDebugLibraries>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Boost.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Tbb.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Eigen.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Poco.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Yaml.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Sophus.props" />
+  <Import Project="$(SolutionDir)msbuild\dependencies\Beckhoff.props" />
+  <ItemDefinitionGroup>
+    <ClCompile>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
+      <WarningLevel>Level3</WarningLevel>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;_CRT_SECURE_NO_WARNINGS;CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(SolutionDir)RobotSystem;$(SolutionDir)plugins\robot\robot_device;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary Condition="'$(Configuration)' == 'Debug'">MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(Configuration)' == 'Release'">MultiThreadedDLL</RuntimeLibrary>
+      <AdditionalOptions>/utf-8 /MP6 /bigobj %(AdditionalOptions)</AdditionalOptions>
+      <ConformanceMode>false</ConformanceMode>
+    </ClCompile>
+    <Link>
+      <SubSystem>Console</SubSystem>
+      <AdditionalDependencies>winmm.lib;version.lib;ws2_32.lib;Iphlpapi.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="main.cpp" />
+    <ClCompile Include="..\..\RobotSystem\Net\server.cpp" />
+    <ClCompile Include="..\..\RobotSystem\Net\server.handler.cpp" />
+    <ClCompile Include="..\..\RobotSystem\Net\server.interface.cpp" />
+    <ClCompile Include="..\..\RobotSystem\Robot\YunSBot.Base.cpp" />
+    <ClCompile Include="..\..\RobotSystem\Robot\YunSBot.ControlChannel.cpp" />
+    <ClCompile Include="..\..\RobotSystem\Robot\YunSBot.UdpV3.cpp" />
+    <ClCompile Include="..\..\RobotSystem\Robot\Motions\Motions.Cycles.cpp" />
+    <ClCompile Include="..\..\RobotSystem\Robot\Motions\Motions.MoveArm.cpp" />
+    <ClCompile Include="..\..\RobotSystem\RPC\ArmModule.cpp" />
+    <ClCompile Include="..\..\RobotSystem\RPC\ArmModule.Actions.cpp" />
+    <ProjectReference Include="..\..\plugins\lib\library\library.vcxproj">
+      <Project>{FC408218-7C26-45A6-8103-04A64F750697}</Project>
+    </ProjectReference>
+    <ProjectReference Include="..\..\plugins\robot\robot_device\robot_device.vcxproj">
+      <Project>{DF82B80E-15E6-4B4D-B936-60AC59C58500}</Project>
+    </ProjectReference>
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+</Project>
